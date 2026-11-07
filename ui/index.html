@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Galpon</title>
+<link rel="stylesheet" href="styles.css">
+<script src="bridge.js"></script>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="bar-group">
+      <div class="logo" aria-label="Galpon"><span>Galpon</span><i></i></div>
+      <button class="tool" id="btn-home" title="Mis canciones"></button>
+      <button class="tool g-enter" id="btn-game" title="Modo juego: toca canciones con la autopista de notas">Juego</button>
+      <button class="tool toggle" id="btn-library" title="Biblioteca (Y)"></button>
+      <button class="tool toggle" id="btn-controls" title="Controles (B)"></button>
+      <button class="tool toggle" id="btn-editor" title="Editor (E)"></button>
+      <button class="tool toggle" id="btn-mixer" title="Mezclador (X)"></button>
+    </div>
+    <div class="bar-group center">
+      <div class="transport">
+        <button class="tbtn" id="btn-start" aria-label="Volver al inicio (Enter)"></button>
+        <button class="tbtn" id="btn-play" aria-label="Reproducir (Espacio)"></button>
+        <button class="tbtn rec" id="btn-record" aria-label="Grabar (R)"><span class="dot"></span></button>
+        <button class="tbtn toggle" id="btn-cycle" aria-label="Repetir sección (C)"></button>
+      </div>
+      <div class="lcd" id="lcd">
+        <button class="lcd-cell" id="lcd-pos"><b>1 . 1</b><small>COMPÁS</small></button>
+        <button class="lcd-cell" id="lcd-bpm"><b>120</b><small>TEMPO</small></button>
+        <button class="lcd-cell" id="lcd-sig"><b>4/4</b><small>RITMO</small></button>
+        <button class="lcd-cell" id="lcd-key"><b>Do may</b><small>TONO</small></button>
+      </div>
+      <button class="tool toggle" id="btn-metro" title="Metrónomo (K)"></button>
+      <button class="tool toggle" id="btn-countin" title="Cuenta previa al grabar"></button>
+      <button class="tool" id="btn-tuner" title="Afinador"></button>
+    </div>
+    <div class="bar-group">
+      <div class="master" title="Volumen general">
+        <div class="meter" id="master-meter"><i></i><i></i></div>
+        <input type="range" id="master-vol" min="-60" max="6" step="0.5" value="0" aria-label="Volumen general">
+      </div>
+      <button class="tool toggle" id="btn-keys" title="Teclado (K con Cmd)"></button>
+      <button class="tool toggle" id="btn-loops" title="Loops (O)"></button>
+      <button class="tool" id="btn-export" title="Exportar canción"></button>
+      <button class="tool" id="btn-settings" title="Audio, MIDI y plugins"></button>
+      <span class="job hidden" id="job"></span>
+      <span class="cpu" id="cpu" title="Cuánto trabaja la computadora para el audio"></span>
+      <span class="save-state" id="save-state"></span>
+    </div>
+  </header>
+
+  <div id="workspace">
+    <aside id="library" class="side hidden"></aside>
+    <main id="center">
+      <div id="tracks-area">
+        <div id="ruler-row">
+          <div id="ruler-corner">
+            <button class="mini-btn" id="btn-add-track" aria-label="Agregar pista"></button>
+            <span id="track-count"></span>
+            <input type="range" id="zoom" min="8" max="160" value="28" aria-label="Zoom">
+          </div>
+          <div id="ruler-scroll"><canvas id="ruler"></canvas></div>
+        </div>
+        <div id="chord-row">
+          <div id="chord-corner"><span>Acordes</span><button class="pill tiny" id="btn-chords" title="Identificar acordes (como Chord ID de Logic)">Identificar…</button></div>
+          <div id="chord-scroll"><div id="chord-strip"></div></div>
+        </div>
+        <div id="tracks-scroll">
+          <div id="tracks-inner">
+            <div id="headers"></div>
+            <div id="lanes-wrap">
+              <div id="lanes"></div>
+              <div id="playhead"></div>
+            </div>
+          </div>
+        </div>
+        <div id="empty-hint" class="hidden">
+          <p>La canción está vacía.</p>
+          <button class="btn primary" id="btn-empty-add">+ Agregar una pista</button>
+        </div>
+      </div>
+      <section id="bottom" class="hidden">
+        <div id="bottom-handle" title="Arrastra para cambiar el tamaño"></div>
+        <div class="bottom-tabs" id="bottom-tabs"></div>
+        <div id="bottom-body"></div>
+      </section>
+      <section id="keys-panel" class="hidden"></section>
+    </main>
+    <aside id="loops" class="side right hidden"></aside>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="timeline.js"></script>
+<script src="panels.js"></script>
+<script src="app.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+name: Compilar
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-2022
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versión
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path CMakeLists.txt -Pattern 'project\(Galpon VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Caché de dependencias
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/_deps/*-src
+            build/_deps/webview2
+            build/_deps/asiosdk
+          key: deps-windows-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configurar
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Compilar
+        run: cmake --build build --config Release --parallel
+
+      - name: Pruebas del motor
+        run: build\GalponTests_artefacts\Release\GalponTests.exe
+
+      - name: Empaquetar
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          New-Item -ItemType Directory -Force dist, pkg | Out-Null
+          Copy-Item build\Galpon_artefacts\Release\Galpon.exe pkg\
+          Copy-Item LICENSE pkg\LICENSE.txt
+          Compress-Archive -Path pkg\* -DestinationPath "dist\Galpon-$v-Windows.zip" -Force
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$v" installer\galpon.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Galpon-Windows
+          path: dist/*
+
+      - name: Publicar versión
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+
+  mac:
+    name: Mac
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versión
+        id: version
+        run: echo "version=$(sed -n 's/^project(Galpon VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Caché de dependencias
+        uses: actions/cache@v4
+        with:
+          path: build/_deps/*-src
+          key: deps-mac-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configurar
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compilar
+        run: cmake --build build --parallel
+
+      - name: Pruebas del motor
+        run: build/GalponTests_artefacts/Release/GalponTests
+
+      - name: Empaquetar
+        run: |
+          mkdir -p dist
+          ditto -c -k --keepParent build/Galpon_artefacts/Release/Galpon.app "dist/Galpon-${{ steps.version.outputs.version }}-Mac.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Galpon-Mac
+          path: dist/*
+
+      - name: Publicar versión
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
