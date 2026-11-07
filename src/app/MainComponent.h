@@ -44,6 +44,7 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     std::unique_ptr<juce::WebBrowserComponent> browser;
     juce::File devUiFolder;
+    juce::ScopedMessageBox missingWebViewBox;
 };
 
 } // namespace galpon

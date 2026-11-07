@@ -63,6 +63,15 @@ MainComponent::MainComponent (Engine& e) : engine (e)
     engine.plugins.onChange = [this] { api.touch(); };
 
     auto options = juce::WebBrowserComponent::Options{}
+       #if JUCE_WINDOWS
+        // Without this JUCE uses the old Internet Explorer control, which can't show the interface.
+        // WebView2 keeps its data in a writable folder (not next to the .exe in Program Files).
+        .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
+        .withWinWebView2Options (juce::WebBrowserComponent::Options::WinWebView2{}
+            .withUserDataFolder (juce::File::getSpecialLocation (juce::File::windowsLocalAppData)
+                                     .getChildFile ("Galpon").getChildFile ("WebView2"))
+            .withBackgroundColour (juce::Colour (0xff161618)))
+       #endif
         .withNativeIntegrationEnabled()
         .withKeepPageLoadedWhenBrowserIsHidden()
         .withResourceProvider ([this] (const juce::String& url) { return serve (url); })
@@ -71,6 +80,23 @@ MainComponent::MainComponent (Engine& e) : engine (e)
         {
             handle (args.size() > 0 ? args[0].toString() : juce::String(), args.size() > 1 ? args[1] : juce::var(), std::move (done));
         });
+
+   #if JUCE_WINDOWS
+    if (! juce::WebBrowserComponent::areOptionsSupported (options))
+    {
+        // WebView2 comes with Windows 10 and 11, but it can be missing or removed.
+        auto opts = juce::MessageBoxOptions::makeOptionsOkCancel (juce::MessageBoxIconType::WarningIcon,
+            "Falta Microsoft WebView2",
+            juce::String (u8"Galpon necesita el componente WebView2 de Microsoft para mostrar su pantalla. "
+                          u8"Instálalo (es gratis y tarda un minuto) y vuelve a abrir Galpon."),
+            "Descargar WebView2", "Cerrar");
+        missingWebViewBox = juce::NativeMessageBox::showScopedAsync (opts, [] (int result)
+        {
+            if (result == 1)
+                juce::URL ("https://go.microsoft.com/fwlink/p/?LinkId=2124703").launchInDefaultBrowser();
+        });
+    }
+   #endif
 
     browser = std::make_unique<juce::WebBrowserComponent> (options);
     addAndMakeVisible (*browser);
