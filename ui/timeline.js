@@ -648,35 +648,79 @@
     }
   };
 
+  /** Makes the timeline wide enough to show up to `beat` (recording or dragging past the end). */
+  T.ensureWidth = function (beat) {
+    const lanes = $('#lanes');
+    const need = Math.ceil(beat * G.ppb);
+    if (need <= (parseFloat(lanes.style.width) || 0)) return;
+    lanes.style.width = need + 'px';
+    $('#tracks-inner').style.width = (need + 240) + 'px';
+    const strip = $('#chord-strip');
+    if (strip) strip.style.width = lanes.style.width;
+  };
+
+  /** While dragging on the ruler, holding the pointer near an edge scrolls the timeline that way
+      (faster the further out), so a selection can go past what fits on screen. */
+  function edgeScroller(canvas, onMove) {
+    let last = null, raf = 0;
+    const step = () => {
+      raf = 0;
+      if (!last) return;
+      const r = canvas.getBoundingClientRect();
+      const edge = 48;
+      let d = 0;
+      if (last.clientX > r.right - edge) d = (last.clientX - (r.right - edge)) / edge;
+      else if (last.clientX < r.left + edge) d = -((r.left + edge) - last.clientX) / edge;
+      if (!d) return;
+      const scroll = $('#tracks-scroll');
+      const before = scroll.scrollLeft;
+      const speed = Math.min(2.5, Math.abs(d)) * 16;   // px per frame
+      if (d > 0) T.ensureWidth((before + scroll.clientWidth + speed) / G.ppb + T.bpb() * 2);
+      scroll.scrollLeft = Math.max(0, before + Math.sign(d) * speed);
+      if (scroll.scrollLeft !== before) { T.drawRuler(); onMove(last); }
+      raf = requestAnimationFrame(step);
+    };
+    return {
+      move(ev) { last = ev; onMove(ev); if (!raf) raf = requestAnimationFrame(step); },
+      stop() { last = null; if (raf) cancelAnimationFrame(raf); raf = 0; },
+    };
+  }
+
   function setupRuler() {
     const canvas = $('#ruler');
     canvas.addEventListener('pointerdown', (e) => {
-      const off = $('#tracks-scroll').scrollLeft;
-      const beatAt = (ev) => Math.max(0, (ev.clientX - canvas.getBoundingClientRect().left + off) / G.ppb);
+      // read the scroll every time: it changes while dragging near the edges
+      const beatAt = (ev) => Math.max(0, (ev.clientX - canvas.getBoundingClientRect().left + $('#tracks-scroll').scrollLeft) / G.ppb);
       canvas.setPointerCapture(e.pointerId);
       if (e.offsetY < 13) {
         // drag in the top strip = choose the section to repeat
         const bpb = T.bpb();
         const a = Math.floor(beatAt(e) / bpb) * bpb;
         T.dragCycle = true;
-        const move = (ev) => {
+        const edges = edgeScroller(canvas, (ev) => {
           const b = beatAt(ev);
           const lo = Math.min(a, Math.floor(b / bpb) * bpb), hi = Math.max(a + bpb, Math.ceil(b / bpb) * bpb);
           G.state.song.cycleStart = lo; G.state.song.cycleEnd = hi; G.state.song.cycle = true;
           T.drawRuler();
-        };
+        });
+        const move = (ev) => edges.move(ev);
         const up = () => {
           T.dragCycle = false;
-          canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerup', up);
+          edges.stop();
+          canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerup', up); canvas.removeEventListener('pointercancel', up);
           G.run('setSong', { cycle: true, cycleStart: G.state.song.cycleStart, cycleEnd: G.state.song.cycleEnd });
         };
         move(e);
-        canvas.addEventListener('pointermove', move); canvas.addEventListener('pointerup', up);
+        canvas.addEventListener('pointermove', move); canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
       } else {
-        const seek = (ev) => { const b = T.snap(beatAt(ev), ev); T.updatePlayhead(b); G.call('setPosition', { beat: b }); };
+        const edges = edgeScroller(canvas, (ev) => { const b = T.snap(beatAt(ev), ev); T.updatePlayhead(b); G.call('setPosition', { beat: b }); });
+        const seek = (ev) => edges.move(ev);
         seek(e);
-        const up = () => { canvas.removeEventListener('pointermove', seek); canvas.removeEventListener('pointerup', up); };
-        canvas.addEventListener('pointermove', seek); canvas.addEventListener('pointerup', up);
+        const up = () => {
+          edges.stop();
+          canvas.removeEventListener('pointermove', seek); canvas.removeEventListener('pointerup', up); canvas.removeEventListener('pointercancel', up);
+        };
+        canvas.addEventListener('pointermove', seek); canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
       }
     });
   }
@@ -693,6 +737,90 @@
     const jumped = T._lastBeat !== undefined && Math.abs(beat - T._lastBeat) > 1;
     T._lastBeat = beat;
     if (offscreen && ((G.tick && G.tick.playing) || jumped)) scroll.scrollLeft = Math.max(0, x - 80);
+  };
+
+  // ------------------------------------------------------------------ the take being recorded
+  // While recording, each track being recorded shows a red region that grows with the playhead,
+  // with the input level drawn as a waveform, so you can see the take is coming in.
+  const REC_CHUNK = 1024;   // px per canvas: only the last one is redrawn as the take grows
+  T.rec = null;             // { start, tracks: {id: [[beat, level], ...]}, last }
+
+  function recNode(lane, id) {
+    let node = lane.querySelector('.clip.rec');
+    if (node) return node;
+    const tr = T.track(id);
+    node = el('div.clip.rec', { 'data-rec': id });
+    node.appendChild(el('span.ctitle', { text: '● Grabando' + (tr && tr.kind !== 'audio' ? ' MIDI' : '') }));
+    node.appendChild(el('div.recwave'));
+    node._drawnTo = 0;   // px already drawn for good
+    lane.appendChild(node);
+    return node;
+  }
+
+  function drawRecChunks(node, points, start) {
+    const box = node.lastChild;
+    const h = box.clientHeight || 40;
+    const dpr = window.devicePixelRatio || 1;
+    const endX = points.length ? (points[points.length - 1][0] - start) * G.ppb : 0;
+    const need = Math.max(1, Math.ceil(endX / REC_CHUNK));
+    while (box.children.length < need) {
+      const c = el('canvas');
+      c.style.left = box.children.length * REC_CHUNK + 'px';
+      c.style.width = REC_CHUNK + 'px';
+      c.width = REC_CHUNK * dpr; c.height = h * dpr;
+      box.appendChild(c);
+    }
+    const first = Math.floor(node._drawnTo / REC_CHUNK);
+    const mid = h / 2;
+    for (let i = first; i < need; i++) {
+      const canvas = box.children[i];
+      const g = canvas.getContext('2d');
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, REC_CHUNK, h);
+      g.fillStyle = '#ff6b6b';
+      const x0 = i * REC_CHUNK;
+      for (let k = 0; k < points.length; k++) {
+        const x = (points[k][0] - start) * G.ppb - x0;
+        const nx = k + 1 < points.length ? (points[k + 1][0] - start) * G.ppb - x0 : x + 1;
+        if (nx < 0) continue;
+        if (x > REC_CHUNK) break;
+        const a = Math.min(mid, Math.sqrt(points[k][1]) * mid);
+        g.fillRect(x, mid - a, Math.max(1, nx - x), Math.max(1, a * 2));
+      }
+    }
+    node._drawnTo = Math.max(0, (need - 1) * REC_CHUNK);
+  }
+
+  T.updateRecording = function (t) {
+    const r = t.rec;
+    if (!r || !G.state) {
+      if (T.rec) { G.$$('.clip.rec').forEach((n) => n.remove()); T.rec = null; }
+      return;
+    }
+    const beat = t.beat;
+    if (!T.rec || Math.abs(T.rec.start - r.start) > 1e-6) T.rec = { start: r.start, tracks: {}, last: -1e9 };
+    const rec = T.rec;
+    if (t.countIn || beat < rec.start) return;   // still counting in
+    // With the cycle on, every pass round the section is a new take: start drawing again
+    if (beat < rec.last - 0.25) { rec.tracks = {}; G.$$('.clip.rec').forEach((n) => n.remove()); }
+    rec.last = beat;
+    T.ensureWidth(beat + T.bpb() * 8);
+
+    for (const id of r.tracks || []) {
+      const idx = G.state.tracks.findIndex((x) => x.id === id);
+      if (idx < 0) continue;
+      const pts = rec.tracks[id] || (rec.tracks[id] = []);
+      const tr = G.state.tracks[idx];
+      const level = tr.kind === 'audio' ? Math.min(1, (t.inputs && t.inputs[idx]) || 0) : 0;
+      pts.push([beat, level]);
+      const lane = G.$(`.lane[data-track="${id}"]`);
+      if (!lane) continue;
+      const node = recNode(lane, id);
+      node.style.left = rec.start * G.ppb + 'px';
+      node.style.width = Math.max(6, (beat - rec.start) * G.ppb) + 'px';
+      if (!node._built) { node._built = true; node._drawnTo = 0; }   // a fresh node (after a redraw) draws everything
+      if (tr.kind === 'audio') drawRecChunks(node, pts, rec.start);
+    }
   };
 
   T.setZoom = function (ppb, anchorBeat) {

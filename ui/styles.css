@@ -129,6 +129,11 @@ input, select { font: inherit; color: var(--text); }
 .clip .takes { margin-left: 6px; padding: 0 5px; border-radius: 4px; background: rgba(0,0,0,.35); font-weight: 700; }
 .clip .ctitle { display: block; padding: 2px 7px; font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: color-mix(in srgb, var(--c) 30%, transparent); }
 .clip canvas { position: absolute; left: 0; top: 20px; width: 100%; height: calc(100% - 20px); }
+.clip.rec { --c: #e5484d; pointer-events: none; background: color-mix(in srgb, var(--c) 22%, transparent); box-shadow: 0 0 0 1px rgba(229,72,77,.35), 0 0 14px rgba(229,72,77,.25); }
+.clip.rec .ctitle { color: #ffd6d6; animation: recblink 1.2s ease-in-out infinite; }
+.clip.rec .recwave { position: absolute; left: 0; right: 0; top: 20px; bottom: 0; overflow: hidden; }
+.clip.rec .recwave canvas { position: absolute; top: 0; height: 100%; }
+@keyframes recblink { 50% { opacity: .55; } }
 .clip .grip { position: absolute; top: 0; bottom: 0; right: 0; width: 8px; cursor: ew-resize; }
 .clip .loopgrip { position: absolute; top: 0; right: 0; width: 14px; height: 18px; cursor: alias; }
 .clip .loopgrip::after { content: '↻'; position: absolute; right: 2px; top: 1px; font-size: 11px; color: var(--text); opacity: .6; }

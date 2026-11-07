@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   const G = window.G;
-  let version = 1, nextId = 1, playing = false, recording = false, beat = 0, lastT = performance.now(), selected = 0;
+  let recStart = 0, version = 1, nextId = 1, playing = false, recording = false, beat = 0, lastT = performance.now(), selected = 0;
   const song = { limiter: true, name: 'Canción de prueba', bpm: 120, sigNum: 4, sigDen: 4, key: 'C', minor: false, cycle: false, cycleStart: 0, cycleEnd: 16, metronome: true, countIn: true, masterDb: 0 };
   const tracks = [];
   const lib = {
@@ -164,7 +164,7 @@
         case 'togglePlay': playing = !playing; if (!playing) recording = false; return ok();
         case 'play': playing = true; return ok();
         case 'stop': playing = false; recording = false; return ok();
-        case 'record': recording = !recording; playing = recording; return ok();
+        case 'record': recording = !recording; playing = recording; recStart = beat; return ok();
         case 'setPosition': beat = a.beat; return ok();
         case 'selectTrack': selected = a.id; return ok();
         case 'setSong': Object.assign(song, a); return changed();
@@ -244,6 +244,7 @@
         if (js.length) game.judgments = js;
       }
     }
-    G.emitLocal('tick', { beat, playing, recording, countIn: false, cpu: 0.05, version, meters, inputs, master: playing ? [0.5, 0.5] : [0, 0], game });
+    const rec = recording ? { start: recStart, tracks: tracks.filter((t) => t.kind === 'audio' && (t.armed || t.id === selected)).map((t) => t.id) } : undefined;
+    G.emitLocal('tick', { beat, playing, recording, rec, countIn: false, cpu: 0.05, version, meters, inputs, master: playing ? [0.5, 0.5] : [0, 0], game });
   }, 33);
 })();

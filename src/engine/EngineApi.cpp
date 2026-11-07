@@ -187,6 +187,16 @@ juce::var EngineApi::getTick()
     o->setProperty ("playing", engine.isPlaying());
     o->setProperty ("recording", engine.isRecording());
     o->setProperty ("countIn", engine.isCountingIn());
+    if (engine.isRecording())
+    {
+        // so the interface can draw the take growing while it's recorded
+        auto* r = new juce::DynamicObject();
+        juce::Array<juce::var> ids;
+        for (int id : engine.recordingTrackIds()) ids.add (id);
+        r->setProperty ("tracks", ids);
+        r->setProperty ("start", engine.recordStartBeats());
+        o->setProperty ("rec", juce::var (r));
+    }
     o->setProperty ("cpu", engine.getCpu());
     if (auto* d = engine.deviceManager.getCurrentAudioDevice())
         o->setProperty ("xruns", d->getXRunCount());   // times the audio couldn't be computed in time (clicks)

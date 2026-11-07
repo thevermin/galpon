@@ -61,6 +61,9 @@ public:
 
     /** Recording health, for the interface: audio that couldn't be written (should be 0). */
     juce::int64 recordingDroppedSamples() const;
+    /** While recording: the tracks being recorded and where the take starts (beats). Message thread. */
+    std::vector<int> recordingTrackIds() const;
+    double recordStartBeats() const noexcept { return samplesToBeats ((double) recordStartSample); }
     bool recordingDiskFailed() const;
     /** Set by the audio thread when the interface stops in the middle of a recording. */
     std::atomic<bool> deviceLostWhileRecording { false };

@@ -130,6 +130,7 @@
     }
     $('#btn-record').classList.toggle('active', t.recording);
     T.updatePlayhead(t.beat);
+    T.updateRecording(t);
 
     // meters
     const toWidth = (v) => Math.max(0, Math.min(100, (20 * Math.log10(Math.max(v, 1e-5)) + 60) / 66 * 100));

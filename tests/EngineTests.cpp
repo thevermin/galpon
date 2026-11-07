@@ -250,6 +250,13 @@ static void testRecording()
     t.engine.setPositionBeats (4.0);
     t.engine.record();
     CHECK (t.engine.isRecording(), "grabando");
+    {
+        auto tick = t.api.getTick();
+        auto rec = tick["rec"];
+        CHECK (rec.isObject() && std::abs ((double) rec["start"] - 4.0) < 1e-6
+               && rec["tracks"].size() >= 1 && rec["tracks"].getArray()->contains (a->id),
+               "la interfaz sabe qué pistas se graban y desde dónde (para dibujar la toma)");
+    }
 
     const int n = 256;
     juce::AudioBuffer<float> in (2, n), out (2, n);

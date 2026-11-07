@@ -1235,6 +1235,16 @@ juce::Result Engine::record()
     return juce::Result::ok();
 }
 
+std::vector<int> Engine::recordingTrackIds() const
+{
+    std::vector<int> ids;
+    if (! recording.load()) return ids;
+    const juce::ScopedLock sl (lock);
+    for (auto& t : audioTakes) ids.push_back (t.trackId);
+    for (auto& t : midiTakes) ids.push_back (t.trackId);
+    return ids;
+}
+
 juce::int64 Engine::recordingDroppedSamples() const
 {
     juce::int64 n = 0;
