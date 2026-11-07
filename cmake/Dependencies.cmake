@@ -25,6 +25,8 @@ target_include_directories(galpon_shine SYSTEM PUBLIC "${shine_SOURCE_DIR}/src/l
 set_target_properties(galpon_shine PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 99)
 if (NOT MSVC)
     target_compile_options(galpon_shine PRIVATE -O2 -w)
+else()
+    target_compile_options(galpon_shine PRIVATE "/FI${CMAKE_CURRENT_LIST_DIR}/msvc_compat.h" /W0)
 endif()
 
 # Signalsmith Stretch (MIT): time stretching and pitch shifting for "Flex" (quantize audio, follow
