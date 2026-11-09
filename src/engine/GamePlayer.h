@@ -45,6 +45,10 @@ public:
     void setMasterGain (float g) { masterGain = juce::jlimit (0.0f, 1.5f, g); }
     float getMasterGain() const noexcept { return masterGain.load(); }
     juce::var stemsInfo() const;
+    /** How distorted the song's guitar sounds between two times (0 = clean … 1 = high gain), heard
+        from its guitar stem (or the whole mix if there's none). -1 if there's nothing to listen to.
+        Message thread. */
+    float guitarDrive (double fromSec, double toSec, bool bass) const;
     double length() const noexcept   { return lengthSec; }
 
     /** Where the song is, in seconds, as it's heard (the stretcher's delay taken out). */

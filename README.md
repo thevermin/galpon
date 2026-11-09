@@ -7,7 +7,7 @@
 - **Windows**: baja el instalador desde [Releases](../../releases), o el último build desde [Actions](../../actions).
 - **Mac**: se compila en un par de comandos (ver [Compilar](#compilar)).
 
-Versión actual: **0.10**.
+Versión actual: **0.11**.
 
 ---
 
@@ -47,7 +47,7 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 - Lee canciones **`.feedpak`** (y `.sloppak`), el formato abierto de [feedBack](https://github.com/got-feedback/feedback). No abre ni descifra archivos de otros juegos.
 - **Dos vistas**:
   - **Tablatura (2D)**: las notas llegan de derecha a izquierda.
-  - **Mástil en 3D**: una cámara en ángulo, como en Rocksmith, con la cuerda más grave arriba. Las notas vienen desde el fondo por el carril de su traste, que se ilumina, y la cámara sigue la mano con suavidad.
+  - **Mástil en 3D**, como en Rocksmith: la cámara detrás del mástil mirando un camino largo, la zona de la mano enmarcada en celeste, la cuerda más grave arriba y el número del traste debajo de cada nota. La cámara sigue la mano con suavidad.
   - **Las dos a la vez**: el 3D arriba y la tablatura abajo.
 - **Técnicas como en Rocksmith**: slides que cruzan al traste de destino, bends con flecha, ligados (nota hueca), armónicos (rombo), palm mute (franja oscura), vibrato y trémolo.
 - **Notas en inglés (C D E) o en español (Do Re Mi)**, a elección, en el estudio y en el juego.
@@ -56,7 +56,7 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 - **Te escucha y te da puntos**: reconoce las notas y acordes que tocas, si llegaste a tiempo y si mantuviste las notas largas. Lleva racha, multiplicador y precisión. Al final ves un resumen por parte y puedes practicar la parte que más te costó.
 - **Práctica**: más despacio sin cambiar el tono (30–100 %), repetir A–B o una parte entera.
 - **Volumen** del Master, de cada instrumento de la canción y de tu guitarra. Hay un atajo para bajar o quitar la guitarra (o el bajo) de la grabación y escucharte mejor, y puedes elegir cuánto baja la canción cuando tocas fuerte.
-- **Sonido automático**: arma los efectos que pide cada parte (limpio, distorsión, solo…) y los cambia solo. Si conectas tu cuenta de **TONE3000**, usa las capturas que marcaste como favoritas.
+- **Sonido automático**: arma los efectos que pide cada parte (limpio, distorsión, solo…) y los cambia solo. Si el nombre del sonido no lo dice, escucha la guitarra de la canción para saber cuánta distorsión lleva. Si conectas tu cuenta de **TONE3000**, usa las capturas que marcaste como favoritas.
 - Afinador con la afinación de la canción y ajuste de sincronía.
 
 ## Atajos

@@ -283,4 +283,48 @@ void GamePlayer::render (juce::AudioBuffer<float>& out, int len)
     }
 }
 
+float GamePlayer::guitarDrive (double fromSec, double toSec, bool bass) const
+{
+    // the guitar (or bass) stem; the full mix only as a last resort
+    const Stem* src = nullptr;
+    for (auto& st : stems)
+    {
+        const auto id = (st->id + " " + st->name).toLowerCase();
+        if (bass ? id.contains ("bass") || id.contains ("bajo") : id.contains ("guitar") || id.contains ("guitarra")) { src = st.get(); break; }
+    }
+    if (src == nullptr) return -1.0f;
+    const auto& buf = src->original != nullptr ? *src->original : src->audio;
+    const double rate = src->original != nullptr ? src->originalRate : src->audioRate;
+    if (buf.getNumSamples() == 0 || rate <= 0) return -1.0f;
+
+    // A clean guitar has sharp peaks that ring down (high crest factor); a distorted one is squashed
+    // flat (low crest factor). Look at the loud windows of this stretch and take the typical value.
+    const int win = (int) (rate * 0.046);
+    const int a = juce::jlimit (0, buf.getNumSamples(), (int) (fromSec * rate));
+    const int b = juce::jlimit (0, buf.getNumSamples(), (int) (toSec * rate));
+    std::vector<float> crests, levels;
+    std::vector<std::pair<float, float>> wins;   // rms, crest
+    float loudest = 0;
+    for (int i = a; i + win <= b; i += win)
+    {
+        double sum = 0; float peak = 0;
+        for (int k = 0; k < win; ++k)
+        {
+            float v = 0;
+            for (int ch = 0; ch < buf.getNumChannels(); ++ch) v += buf.getSample (ch, i + k);
+            v /= (float) juce::jmax (1, buf.getNumChannels());
+            sum += (double) v * v; peak = juce::jmax (peak, std::abs (v));
+        }
+        const float rms = (float) std::sqrt (sum / win);
+        if (rms > 1.0e-4f) wins.push_back ({ rms, peak / rms });
+        loudest = juce::jmax (loudest, rms);
+    }
+    for (auto& [rms, crest] : wins) if (rms > loudest * 0.25f) crests.push_back (crest);
+    if (crests.size() < 8) return -1.0f;
+    std::nth_element (crests.begin(), crests.begin() + (long) crests.size() / 2, crests.end());
+    const float crest = crests[crests.size() / 2];
+    // ~2.3 (squashed, high gain) … ~5 (clean, peaky)
+    return juce::jlimit (0.0f, 1.0f, (5.0f - crest) / 2.7f);
+}
+
 } // namespace galpon

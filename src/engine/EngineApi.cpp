@@ -1654,7 +1654,7 @@ namespace
 
 /** What a tone needs, in Galpon's own effects. A tone comes from the pack's rigs.json when it has one,
     or else from its name ("Clean", "Lead Drive"…). */
-juce::Array<juce::var> EngineApi::chainForTone (const juce::String& rigId, const juce::String& toneName, bool bass, const juce::var& assign)
+juce::Array<juce::var> EngineApi::chainForTone (const juce::String& rigId, const juce::String& toneName, bool bass, const juce::var& assign, float heardDrive)
 {
     juce::Array<juce::var> chain;
     auto add = [&chain] (const juce::String& type, std::initializer_list<std::pair<const char*, double>> params, const juce::String& file = {})
@@ -1769,17 +1769,23 @@ juce::Array<juce::var> EngineApi::chainForTone (const juce::String& rigId, const
         }
         else
         {
-            double gain = bass ? 0.25 : 0.45;
-            if (name.contains ("clean") || name.contains ("limpi") || name.contains ("acoustic") || name.contains ("acústic")) gain = bass ? 0.15 : 0.18;
-            else if (name.contains ("crunch") || name.contains ("rhythm") || name.contains ("ritm")) gain = 0.55;
-            else if (name.contains ("lead") || name.contains ("solo")) gain = 0.72;
-            else if (name.contains ("dist") || name.contains ("drive") || name.contains ("metal") || name.contains ("heavy") || name.contains ("gain") || name.contains ("fuzz")) gain = 0.85;
-            if (! bass && (name.contains ("lead") || name.contains ("solo")) && ! name.contains ("clean"))
+            // What the name says, if it says anything; otherwise what the song's guitar sounds like
+            const bool saysClean = name.contains ("clean") || name.contains ("limpi") || name.contains ("acoustic") || name.contains (juce::String (u8"acústic"));
+            double gain = -1;
+            if (saysClean) gain = bass ? 0.15 : 0.18;
+            else if (name.contains ("crunch") || name.contains ("rhythm") || name.contains ("ritm")) gain = 0.62;
+            else if (name.contains ("dist") || name.contains ("drive") || name.contains ("metal") || name.contains ("heavy") || name.contains ("gain") || name.contains ("fuzz")) gain = 0.88;
+            if (gain < 0 && heardDrive >= 0.0f)
+                gain = bass ? 0.15 + 0.5 * heardDrive : heardDrive < 0.25f ? 0.2 : 0.45 + 0.48 * heardDrive;
+            if (gain < 0)
+                gain = (name.contains ("lead") || name.contains ("solo")) ? 0.78 : bass ? 0.25 : 0.62;   // most songs with tones are rock: crunch, not clean
+            else if (! saysClean && (name.contains ("lead") || name.contains ("solo"))) gain = juce::jmax (gain, 0.75);
+            if (! bass && (name.contains ("lead") || name.contains ("solo")) && ! saysClean)
                 add ("drive", { { "drive", 0.3 }, { "tone", 3500.0 }, { "level", 0.0 } });
             add ("amp", { { "gain", gain }, { "bass", bass ? 3.0 : 0.0 }, { "mid", 0.0 }, { "treble", bass ? -2.0 : 0.0 }, { "cab", 1.0 }, { "master", -8.0 } });
             if (! bass && (name.contains ("lead") || name.contains ("solo")))
                 add ("delay", { { "division", 0.0 }, { "ms", 380.0 }, { "feedback", 0.25 }, { "mix", 0.18 } });
-            if (! bass && (name.contains ("chorus") || name.contains ("clean")))
+            if (! bass && (name.contains ("chorus") || saysClean))
                 add ("chorus", { { "rate", 0.7 }, { "depth", 0.3 }, { "mix", name.contains ("chorus") ? 0.5 : 0.25 } });
         }
     }
@@ -1848,7 +1854,19 @@ juce::var EngineApi::gameTone (const juce::var& args)
         if (rigIndex < 0)
         {
             const auto assign = assignAll[juce::Identifier (key.isEmpty() ? "x" : key)];
-            auto chain = chainForTone (u.rig, u.name, bass, assign);
+            // listen to the song's guitar while this tone is used (all the stretches that use it)
+            float drive = -1.0f, weight = 0.0f;
+            for (size_t k = 0; k < uses.size(); ++k)
+            {
+                const auto& w = uses[k];
+                if ((w.rig.isNotEmpty() ? w.rig : w.name) != key) continue;
+                const double to = k + 1 < uses.size() ? uses[k + 1].t : engine.game.length();
+                const float d = engine.game.guitarDrive (w.t, to, bass);
+                if (d < 0) continue;
+                const float wt = (float) juce::jmax (0.1, to - w.t);
+                drive = (drive < 0 ? 0.0f : drive * weight) + d * wt; weight += wt; drive /= weight;
+            }
+            auto chain = chainForTone (u.rig, u.name, bass, assign, drive);
             GameRig r;
             r.key = key;
             r.name = u.name;
@@ -1873,6 +1891,7 @@ juce::var EngineApi::gameTone (const juce::var& args)
             o->setProperty ("name", u.name);
             o->setProperty ("chain", what.joinIntoString (" · "));
             o->setProperty ("capture", assign["file"].toString().isNotEmpty());
+            if (drive >= 0) o->setProperty ("heard", drive < 0.25f ? "limpia" : drive < 0.6f ? "crunch" : "distorsionada");
             report.add (juce::var (o));
         }
         gameToneSchedule.push_back ({ u.t, rigIndex });

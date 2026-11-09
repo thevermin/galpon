@@ -645,7 +645,7 @@
           ((t3 && t3.tones) || []).map((t) => el('option', { value: t.id, selected: String(choice) === String(t.id), text: (t.favorite ? '♥ ' : '') + t.title })));
         const dl = t3 && choice && choice !== 'auto' && t3.downloading ? t3.downloading[choice] : undefined;
         list.append(el('div.g-tone' + (p.toneName === tn.name ? '.on' : ''), null,
-          el('div', null, el('b', { text: tn.name }), el('small', { text: dl === '' ? 'Bajando la captura…' : dl ? dl : tn.chain })), sel));
+          el('div', null, el('b', { text: tn.name }), el('small', { text: dl === '' ? 'Bajando la captura…' : dl ? dl : tn.chain + (tn.heard ? ` — en la canción suena ${tn.heard}` : '') })), sel));
       }
       box.push(list);
     }
@@ -1196,8 +1196,9 @@
     // start drifting towards the next position a second before it comes
     let goal = anchor || { fret: 1, width: 4 };
     if (nextAnchor && nextAnchor.time - now < 1.0) goal = nextAnchor;
-    const targetX = Math.max(goal.fret - 1 + (goal.width || 4) / 2, 2.5);
-    const targetSpan = Math.max((goal.width || 4) + 4, 7.5);
+    // low on the neck the nut sits near the left edge (nothing to show before it)
+    const targetX = Math.max(goal.fret - 1 + (goal.width || 4) / 2, Math.max((goal.width || 4) + 7, 11) * 0.5);
+    const targetSpan = Math.max((goal.width || 4) + 7, 11);   // about a dozen frets across, like Rocksmith
     if (!dt || Math.abs(targetX - cam.x) > 14) { cam.x = targetX; cam.span = targetSpan; }   // first frame or a jump in the song
     else {
       const ease = 1 - Math.exp(-dt / 0.9);              // ~1 s to settle
@@ -1207,24 +1208,26 @@
 
     // ---- the camera
     const span = cam.span;
-    const ahead = 3.2 / opts.zoom;                       // seconds visible into the distance
-    const depth = (span * 1.7) / ahead;                  // world units per second
-    const strGap = Math.min(0.34, 1.75 / n) * Math.min(1.25, Math.max(0.8, s));
+    const ahead = 4.0 / opts.zoom;                       // seconds visible into the distance
+    const depth = (span * 4.2) / ahead;                  // world units per second: a long road
+    const strGap = Math.min(0.32, 1.7 / n) * Math.min(1.25, Math.max(0.8, s));
     // Like Rocksmith: the thickest string on top (as you see your own guitar looking down)
     const hOf = (str) => (n - str) * strGap;            // height above the floor: string 0 (the lowest) highest
     // The camera sits above and behind, off to the right of the hand; low on the neck it looks
     // across more, higher up it comes round towards the middle (the neck turns as you move)
+    // Behind the neck and a little above, almost straight down the road (like Rocksmith); a slight
+    // turn that follows the hand: low on the neck it looks a bit to the right, higher up straight on
     const along = Math.min(1, Math.max(0, (cam.x - 3) / 14));
-    const side = span * (0.3 - 0.18 * along);
-    const C = { x: cam.x + side, y: span * 0.5, z: -span * 1.0 };
-    const T = { x: cam.x - side * 0.15, y: 0, z: span * 0.8 };
+    const side = span * (0.06 - 0.05 * along);
+    const C = { x: cam.x - side, y: span * 0.42, z: -span * 1.05 };
+    const T = { x: cam.x + side * 2, y: 0, z: span * 2.4 };
     let F = { x: T.x - C.x, y: T.y - C.y, z: T.z - C.z };
     const fl = Math.hypot(F.x, F.y, F.z); F = { x: F.x / fl, y: F.y / fl, z: F.z / fl };
     let R = { x: F.z, y: 0, z: -F.x };
     const rl = Math.hypot(R.x, R.z); R = { x: R.x / rl, y: 0, z: R.z / rl };
     const U = { x: F.y * R.z - F.z * R.y, y: F.z * R.x - F.x * R.z, z: F.x * R.y - F.y * R.x };
-    const focal = Math.min(w * 0.95, h * 1.9) * Math.min(1.2, Math.max(0.85, s));
-    const ox = w * 0.5, oy = h * 0.36;
+    const focal = Math.min(w * 0.9, h * 1.8) * Math.min(1.2, Math.max(0.85, s));
+    const ox = w * 0.5, oy = h * 0.34;
     /** world (fret X, height Y, seconds ahead) -> screen [x, y, scale] */
     const P = (X, Y, sec) => {
       const dx = X - C.x, dy = Y - C.y, dz = Math.max(-0.3, sec) * depth - C.z;
@@ -1239,21 +1242,28 @@
     };
     const floorQuad = (x0, x1, z0, z1, fill) => poly([P(x0, 0, z0), P(x1, 0, z0), P(x1, 0, z1), P(x0, 0, z1)], fill);
     const zFar = ahead;
-    const fMin = Math.max(0, Math.floor(cam.x - span * 0.85)), fMax = Math.min(24, Math.ceil(cam.x + span * 0.6));
+    const fMin = Math.max(0, Math.floor(cam.x - span * 0.75)), fMax = Math.min(24, Math.ceil(cam.x + span * 0.75));
 
     // ---- background, floor, the hand's zone
     // a dark stage: almost black, with a faint glow where the notes come from
-    ctx.fillStyle = '#050507'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#050c14'; ctx.fillRect(0, 0, w, h);   // a dark blue stage, like Rocksmith's
     const far = P(cam.x, 0, zFar);
     const glow = ctx.createRadialGradient(far[0], far[1], 0, far[0], far[1], Math.max(w, h) * 0.7);
-    glow.addColorStop(0, 'rgba(70,52,30,0.35)'); glow.addColorStop(0.5, 'rgba(25,20,16,0.2)'); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    glow.addColorStop(0, 'rgba(40,110,150,0.35)'); glow.addColorStop(0.5, 'rgba(14,40,60,0.25)'); glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
     // the floor: dark, lighter close to you
     const n0 = P(cam.x, 0, -0.15), n1 = P(cam.x, 0, zFar);
     const fg = ctx.createLinearGradient(n0[0], n0[1], n1[0], n1[1]);
-    fg.addColorStop(0, '#17140f'); fg.addColorStop(1, '#0a0909');
+    fg.addColorStop(0, '#0e2436'); fg.addColorStop(1, '#07111b');
     floorQuad(fMin, fMax, -0.15, zFar, fg);
-    floorQuad(aFret - 1, aFret - 1 + aWidth, -0.15, zFar, 'rgba(230,168,74,0.07)');
+    floorQuad(aFret - 1, aFret - 1 + aWidth, -0.15, zFar, 'rgba(40,150,210,0.16)');
+    // the hand's zone, framed in cyan all the way down the road
+    for (const xe of [aFret - 1, aFret - 1 + aWidth]) {
+      const a = P(xe, 0.01, -0.15), b = P(xe, 0.01, zFar);
+      const rg = ctx.createLinearGradient(a[0], a[1], b[0], b[1]);
+      rg.addColorStop(0, 'rgba(110,230,255,0.95)'); rg.addColorStop(1, 'rgba(110,230,255,0.15)');
+      ctx.strokeStyle = rg; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    }
     if (p.loop) {
       const z0 = Math.max(0, p.loop.a - now), z1 = Math.min(zFar, p.loop.b - now);
       if (z1 > z0) floorQuad(fMin, fMax, z0, z1, 'rgba(230,168,74,0.05)');
@@ -1271,7 +1281,7 @@
       const inZone = f >= aFret - 1 && f <= aFret - 1 + aWidth;
       const a = P(f, 0, -0.15), b = P(f, 0, zFar);
       const lg = ctx.createLinearGradient(a[0], a[1], b[0], b[1]);
-      lg.addColorStop(0, inZone ? 'rgba(243,199,126,0.42)' : 'rgba(200,190,175,0.14)'); lg.addColorStop(1, 'rgba(200,190,175,0)');
+      lg.addColorStop(0, inZone ? 'rgba(110,220,255,0.55)' : 'rgba(110,170,210,0.18)'); lg.addColorStop(1, 'rgba(110,170,210,0)');
       ctx.strokeStyle = lg; ctx.lineWidth = f === 0 ? 3 : 1.4;
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
@@ -1307,7 +1317,7 @@
     }
     for (const [f, z] of soon) {
       ctx.globalAlpha = 0.28 * (1 - z / 1.6);
-      floorQuad(f - 1, f, -0.15, Math.min(zFar, z + 0.1), '#f3c77e');
+      floorQuad(f - 1, f, -0.15, Math.min(zFar, z + 0.1), '#7fe3ff');
       ctx.globalAlpha = 1;
     }
 
@@ -1321,11 +1331,11 @@
       const top = n * strGap + strGap * 0.5;
       const fade = Math.min(1, (zFar - z) / (zFar * 0.3));
       ctx.globalAlpha = fade;
-      poly([P(xs - 0.55, 0, z), P(xe + 0.55, 0, z), P(xe + 0.55, top, z), P(xs - 0.55, top, z)], 'rgba(230,168,74,0.07)', 'rgba(243,199,126,0.7)', 2);
+      poly([P(xs - 0.55, 0, z), P(xe + 0.55, 0, z), P(xe + 0.55, top, z), P(xs - 0.55, top, z)], 'rgba(60,170,230,0.08)', 'rgba(110,230,255,0.85)', 2.5);
       const name = p.chordName(c.id), prev = p.chords[ci - 1];
       if (name && !(prev && prev.id === c.id && c.t - prev.t < 2.5)) {
         const q = P((xs + xe) / 2, top, z);
-        ctx.fillStyle = '#f3c77e'; ctx.font = '700 ' + Math.max(10, Math.round(q[2] * 0.2)) + 'px "Space Grotesk", Inter, sans-serif';
+        ctx.fillStyle = '#e8f6ff'; ctx.font = '700 ' + Math.max(10, Math.round(q[2] * 0.2)) + 'px "Space Grotesk", Inter, sans-serif';
         ctx.fillText(name, q[0], q[1] - 10);
       }
       ctx.globalAlpha = 1;
@@ -1432,17 +1442,17 @@
         if (mk && mk.hit) { ctx.shadowColor = c; ctx.shadowBlur = 16; }
         // a gem in the string's colour, lighter on top like it has volume
         const gg = ctx.createLinearGradient(q[0], q[1] - g / 2, q[0], q[1] + g / 2);
-        gg.addColorStop(0, mk && !mk.hit ? '#3a2323' : c); gg.addColorStop(1, mk && !mk.hit ? '#2a1d1d' : 'rgba(20,20,24,0.95)');
+        gg.addColorStop(0, mk && !mk.hit ? '#3a2323' : 'rgba(255,255,255,0.18)'); gg.addColorStop(0.45, mk && !mk.hit ? '#2a1d1d' : 'rgba(8,12,18,0.85)'); gg.addColorStop(1, mk && !mk.hit ? '#2a1d1d' : 'rgba(8,12,18,0.85)');
         ctx.fillStyle = mk && mk.hit ? c : hollow ? 'rgba(10,10,12,0.3)' : gg;
-        ctx.strokeStyle = mk && !mk.hit ? '#f87171' : c; ctx.lineWidth = Math.max(1.5, g * (hollow ? 0.14 : 0.1));
+        ctx.strokeStyle = mk && !mk.hit ? "#f87171" : c; ctx.lineWidth = Math.max(2, g * (hollow ? 0.16 : 0.13));
         if (harmonic) {
           // harmonic: a diamond
           ctx.beginPath(); ctx.moveTo(q[0], q[1] - g * 0.55); ctx.lineTo(q[0] + g * 0.55, q[1]); ctx.lineTo(q[0], q[1] + g * 0.55); ctx.lineTo(q[0] - g * 0.55, q[1]); ctx.closePath();
-        } else roundRect(ctx, q[0] - g / 2, q[1] - g * 0.42, g, g * 0.84, g * 0.25);
+        } else roundRect(ctx, q[0] - g * 0.68, q[1] - g * 0.36, g * 1.36, g * 0.72, g * 0.12);
         ctx.fill(); ctx.stroke();
         ctx.shadowBlur = 0;
         // palm mute: a dark band across (the note sounds dampened)
-        if (nt.pm && !harmonic) { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(q[0] - g / 2 + 1, q[1] - g * 0.08, g - 2, g * 0.16); }
+        if (nt.pm && !harmonic) { ctx.fillStyle = c; ctx.fillRect(q[0] - g * 0.55, q[1] - g * 0.06, g * 1.1, g * 0.12); }
         if (muted && g > 10) { ctx.fillStyle = '#f2f2f3'; ctx.font = '700 ' + Math.round(g * 0.5) + 'px Inter, sans-serif'; ctx.fillText('✕', q[0], q[1] + 1); }
       }
       // bend: little arrows on the note, one for a half step, two for a whole one, three for more
@@ -1473,11 +1483,11 @@
     for (const i of list) if (!arriving(i)) drawNote(i);
     // ---- the neck where the notes land: strings across, fret wires, dots, numbers
     const nut = P(fMin, 0, 0), end = P(fMax, 0, 0);
-    poly([P(fMin, -0.02, 0), P(fMax, -0.02, 0), P(fMax, n * strGap + strGap * 0.6, 0), P(fMin, n * strGap + strGap * 0.6, 0)], 'rgba(22,17,12,0.6)');
+    poly([P(fMin, -0.02, 0), P(fMax, -0.02, 0), P(fMax, n * strGap + strGap * 0.6, 0), P(fMin, n * strGap + strGap * 0.6, 0)], 'rgba(8,18,28,0.55)');
     void nut; void end;
     for (let f = fMin; f <= fMax; f++) {
       const a = P(f, 0, 0), b = P(f, n * strGap + strGap * 0.4, 0);
-      ctx.strokeStyle = f === 0 ? '#d8d2c8' : 'rgba(190,182,170,0.55)'; ctx.lineWidth = f === 0 ? 4 : 1.6;
+      ctx.strokeStyle = f === 0 ? '#e6edf2' : 'rgba(200,212,222,0.7)'; ctx.lineWidth = f === 0 ? 5 : 2.2;
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
     for (const f of [3, 5, 7, 9, 12, 15, 17, 19, 21, 24]) {
@@ -1500,7 +1510,7 @@
       const lit = soon.has(f);
       const size = Math.round(Math.max(11, Math.min(22, q[2] * 0.2)) * (lit ? 1.25 : 1));
       ctx.font = '700 ' + size + 'px "Space Grotesk", Inter, sans-serif';
-      ctx.fillStyle = lit ? '#ffe2a8' : inZone ? '#e6a84a' : '#6f685e';
+      ctx.fillStyle = lit ? '#ffd27a' : inZone ? '#f5a524' : '#4f6474';
       ctx.fillText(String(f), q[0], q[1] + size * 0.7);
     }
     // string names at the left of the neck

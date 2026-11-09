@@ -519,6 +519,75 @@ static void testRealDrums()
     setEnv ("GALPON_SOUNDS_DIR", before);
 }
 
+static void pluck (std::vector<float>& out, double sr, double at, int midi, double dur, float amp, juce::uint32 seed);
+
+static void testGuitarTone()
+{
+    std::cout << "Amplificador, distorsión y parlante: cómo suenan\n";
+    const double sr = 48000;
+    std::vector<float> di ((size_t) (sr * 2.0), 0.0f);
+    for (int m : { 40, 47, 52 }) pluck (di, sr, 0.0, m, 2.0, 0.25f, (juce::uint32) m);   // E5 power chord, a DI-level guitar
+
+    auto run = [&] (const char* type, std::initializer_list<std::pair<const char*, float>> params)
+    {
+        auto fx = createBuiltin (type);
+        auto* b = dynamic_cast<BuiltinProcessor*> (fx.get());
+        for (auto& [k, v] : params) b->setReal (k, v);
+        fx->prepareToPlay (sr, 256);
+        juce::AudioBuffer<float> buf (2, (int) di.size());
+        for (int ch = 0; ch < 2; ++ch) buf.copyFrom (ch, 0, di.data(), (int) di.size());
+        juce::MidiBuffer midi;
+        for (int i = 0; i < buf.getNumSamples(); i += 256)
+        {
+            juce::AudioBuffer<float> blk (buf.getArrayOfWritePointers(), 2, i, juce::jmin (256, buf.getNumSamples() - i));
+            fx->processBlock (blk, midi);
+        }
+        return buf;
+    };
+    auto level = [] (const juce::AudioBuffer<float>& b) { return juce::Decibels::gainToDecibels (b.getRMSLevel (0, 0, b.getNumSamples())); };
+    auto fizz = [&] (const juce::AudioBuffer<float>& b)
+    {
+        // share of the energy above 7 kHz: what sounds like bees
+        juce::dsp::IIR::Filter<float> hp (juce::dsp::IIR::Coefficients<float>::makeHighPass (sr, 7000.0, 0.7));
+        juce::dsp::IIR::Filter<float> hp2 (juce::dsp::IIR::Coefficients<float>::makeHighPass (sr, 7000.0, 0.7));
+        double hi = 0, all = 0;
+        for (int i = 0; i < b.getNumSamples(); ++i) { const float x = b.getSample (0, i); const float h = hp2.processSample (hp.processSample (x)); hi += h * h; all += x * x; }
+        return all > 0 ? hi / all : 0.0;
+    };
+    auto crest = [] (const juce::AudioBuffer<float>& b)
+    {
+        float peak = b.getMagnitude (0, 0, b.getNumSamples() / 2);
+        float rms = b.getRMSLevel (0, 0, b.getNumSamples() / 2);
+        return rms > 0 ? peak / rms : 0.0f;
+    };
+
+    auto clean = run ("amp", { { "gain", 0.15f } }), crunch = run ("amp", { { "gain", 0.55f } }), high = run ("amp", { { "gain", 0.9f } });
+    CHECK (finite (clean) && finite (high), "el amplificador no da valores raros");
+    const float lc = level (clean), lh = level (high), lm = level (crunch);
+    CHECK (std::abs (lh - lc) < 8.0f && std::abs (lm - lc) < 8.0f && lc > -30.0f && lh < -1.0f,
+           "el volumen se mantiene parejo al subir la ganancia (" << lc << " / " << lm << " / " << lh << " dB)");
+    CHECK (crest (high) < crest (clean) * 0.7f, "más ganancia, más saturado (cresta " << crest (clean) << " -> " << crest (high) << ")");
+    CHECK (fizz (high) < 0.02 && fizz (crunch) < 0.02, "con parlante, la distorsión no zumba (agudos sobre 7 kHz: " << fizz (high) * 100 << " %)");
+
+    auto drive = run ("drive", { { "drive", 0.8f } });
+    CHECK (finite (drive) && level (drive) > -30.0f && level (drive) < 0.0f, "el pedal de distorsión suena a un nivel razonable");
+
+    // a cabinet with no IR still behaves like a speaker
+    juce::AudioBuffer<float> noise (2, (int) sr);
+    juce::Random r (3);
+    for (int i = 0; i < noise.getNumSamples(); ++i) { const float v = r.nextFloat() * 2 - 1; noise.setSample (0, i, v * 0.3f); noise.setSample (1, i, v * 0.3f); }
+    const double before = fizz (noise);
+    auto cab = createBuiltin ("cab");
+    cab->prepareToPlay (sr, 512);
+    juce::MidiBuffer midi;
+    for (int i = 0; i < noise.getNumSamples(); i += 512)
+    {
+        juce::AudioBuffer<float> blk (noise.getArrayOfWritePointers(), 2, i, juce::jmin (512, noise.getNumSamples() - i));
+        cab->processBlock (blk, midi);
+    }
+    CHECK (fizz (noise) < before * 0.15, "el gabinete sin archivo IR igual corta los agudos como un parlante");
+}
+
 static void testRecording()
 {
     std::cout << "Grabación de audio y MIDI\n";
@@ -1838,7 +1907,8 @@ static void testAutomation()
 }
 
 /** A plucked string (Karplus-Strong), close enough to a guitar for the detector. */
-static void pluck (std::vector<float>& out, double sr, double at, int midi, double dur, float amp = 0.3f, juce::uint32 seed = 1)
+static void pluck (std::vector<float>& out, double sr, double at, int midi, double dur, float amp = 0.3f, juce::uint32 seed = 1);
+static void pluck (std::vector<float>& out, double sr, double at, int midi, double dur, float amp, juce::uint32 seed)
 {
     const double f = 440.0 * std::pow (2.0, (midi - 69) / 12.0);
     const int period = std::max (2, (int) std::round (sr / f));
@@ -2375,6 +2445,7 @@ int main()
     testDrummerArrangement();
     testDrummerStyles();
     testRealDrums();
+    testGuitarTone();
     testRecording();
     testRecordingSafety();
     testSaveLoadUndoExport();

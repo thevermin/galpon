@@ -64,7 +64,7 @@ private:
     void updateScorerInput();
     // automatic sound per part
     juce::var gameTone (const juce::var& args);
-    juce::Array<juce::var> chainForTone (const juce::String& rigId, const juce::String& toneName, bool bass, const juce::var& assign);
+    juce::Array<juce::var> chainForTone (const juce::String& rigId, const juce::String& toneName, bool bass, const juce::var& assign, float heardDrive = -1.0f);
     void applyGameTone();
     void restoreGameTone();
     struct GameRig { juce::String key, name; int first = 0, count = 0; };
