@@ -476,6 +476,7 @@ namespace
 
         /** Tests: wait until loaded. */
         bool isLoading() const { return isThreadRunning(); }
+        bool isStillLoading() const override { return isThreadRunning(); }
 
     protected:
         void writeExtraState (juce::XmlElement& x) const override { x.setAttribute ("file", file.getFullPathName()); }

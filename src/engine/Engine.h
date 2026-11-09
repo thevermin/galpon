@@ -158,6 +158,8 @@ public:
     juce::Result setActiveTake (Track&, Clip&, int takeIndex);
     /** Renders `numSamples` from the current position (no device needed). Used by export and tests. */
     void renderOffline (juce::AudioBuffer<float>& out, int numSamples);
+    /** Waits (up to timeoutMs) for instruments still loading their samples. */
+    void waitForInstruments (int timeoutMs = 120000);
 
     /** What the audio device calls (also used by tests to feed fake input). */
     void renderBlock (float* const* out, int numOut, const float* const* in, int numIn, int n);

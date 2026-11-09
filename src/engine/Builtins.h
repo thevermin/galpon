@@ -54,6 +54,8 @@ public:
 
     /** Extra things that are not knobs, like a loaded model file. */
     virtual juce::var getExtraInfo() const                    { return {}; }
+    /** True while it's still reading its sounds from disk (a sampler loading an instrument). */
+    virtual bool isStillLoading() const                       { return false; }
     virtual juce::Result setExtra (const juce::String& key, const juce::var& value);
 
     float get (const juce::String& paramId) const;

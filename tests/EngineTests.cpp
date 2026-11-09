@@ -481,6 +481,44 @@ static void testDrummerStyles()
     CHECK (oneDrop, "reggae: el bombo cae en el 3 (one drop)");
 }
 
+static void testRealDrums()
+{
+    std::cout << "Baterista con la batería real (muestras)\n";
+    // A tiny stand-in for the downloaded kit, in a sounds folder of its own
+    auto sounds = tempRoot().getChildFile ("SonidosKit");
+    auto programs = sounds.getChildFile ("virtuosity-drums/virtuosity_drums-master/Programs");
+    programs.getChildFile ("keymaps").createDirectory();
+    programs.getChildFile ("keymaps/keymap_basic.sfz").replaceWithText ("#define $KICK_KEY 36\n#define $SNARE_KEY 38\n#define $HH_KEY 42\n#define $LTOM_CENTER_KEY 41\n");
+    {
+        juce::WavAudioFormat fmt;
+        std::unique_ptr<juce::OutputStream> os = std::make_unique<juce::FileOutputStream> (programs.getChildFile ("hit.wav"));
+        auto w = fmt.createWriterFor (os, juce::AudioFormatWriterOptions{}.withSampleRate (48000.0).withNumChannels (1).withBitsPerSample (24));
+        juce::AudioBuffer<float> b (1, 9600);
+        for (int i = 0; i < 9600; ++i) b.setSample (0, i, 0.6f * std::exp (-i / 2000.0f) * std::sin (i * 0.05f));
+        w->writeFromAudioSampleBuffer (b, 0, 9600);
+    }
+    programs.getChildFile ("01-basic-kit.sfz").replaceWithText ("#include \"keymaps/keymap_basic.sfz\"\n<region> key=$KICK_KEY sample=hit.wav\n<region> key=$SNARE_KEY sample=hit.wav\n<region> key=$HH_KEY sample=hit.wav\n");
+    const auto before = juce::SystemStats::getEnvironmentVariable ("GALPON_SOUNDS_DIR", {});
+    setEnv ("GALPON_SOUNDS_DIR", sounds.getFullPathName());
+    {
+        TestEngine t;
+        t.api.call ("addTrack", juce::JSON::parse (R"({"kind":"drummer"})"));
+        auto* d = t.engine.song.tracks[0].get();
+        CHECK (d->instrument.name.contains ("real"), "un baterista nuevo usa la batería real si está descargada");
+        CHECK (programs.getChildFile ("galpon-kit.sfz").existsAsFile(), "con el kit de Galpon (toms en su lugar)");
+        t.api.call ("addTrack", juce::JSON::parse (R"({"kind":"instrument"})"));
+        t.api.call ("undo", {});
+        t.api.call ("undo", {});
+        t.api.call ("redo", {});
+        t.engine.setPositionBeats (0);
+        t.engine.play();
+        auto out = t.render (8.0);   // waits for the samples to load before rendering
+        CHECK (finite (out) && rms (out) > 0.001f, "la batería real suena (también después de deshacer y rehacer)");
+        t.engine.stop();
+    }
+    setEnv ("GALPON_SOUNDS_DIR", before);
+}
+
 static void testRecording()
 {
     std::cout << "Grabación de audio y MIDI\n";
@@ -2326,6 +2364,8 @@ static void testGameStress()
 int main()
 {
     juce::ScopedJuceInitialiser_GUI init;
+    // never use the instruments downloaded on this computer (e.g. the real drum kit): tests must give the same result anywhere
+    setEnv ("GALPON_SOUNDS_DIR", tempRoot().getChildFile ("SonidosVacio").getFullPathName());
     if (auto demo = juce::SystemStats::getEnvironmentVariable ("GALPON_DEMO_OUT", {}); demo.isNotEmpty())
         renderDemo (demo);
     testBuiltins();
@@ -2334,6 +2374,7 @@ int main()
     testDrummerParts();
     testDrummerArrangement();
     testDrummerStyles();
+    testRealDrums();
     testRecording();
     testRecordingSafety();
     testSaveLoadUndoExport();

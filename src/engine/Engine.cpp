@@ -2096,8 +2096,25 @@ void Engine::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessag
 //==============================================================================
 // Offline
 //==============================================================================
+void Engine::waitForInstruments (int timeoutMs)
+{
+    // A recorded instrument reads its samples in the background: rendering before it's done
+    // (exporting right after opening a song) would leave it silent
+    const auto until = juce::Time::getMillisecondCounter() + (juce::uint32) timeoutMs;
+    for (;;)
+    {
+        bool loading = false;
+        for (auto& t : song.tracks)
+            if (auto* b = dynamic_cast<BuiltinProcessor*> (t->instrument.processor.get()))
+                loading |= b->isStillLoading();
+        if (! loading || juce::Time::getMillisecondCounter() > until) return;
+        juce::Thread::sleep (20);
+    }
+}
+
 void Engine::renderOffline (juce::AudioBuffer<float>& out, int numSamples)
 {
+    waitForInstruments();
     const juce::ScopedLock sl (lock);
     out.setSize (2, numSamples, false, false, true);
     int done = 0;
