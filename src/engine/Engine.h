@@ -96,6 +96,10 @@ public:
 
     void   regenerateDrummer (Track&, int onlyClipId = 0);
     void   regenerateAllDrummers();
+    /** Splits [start, start + length) of a drummer track into the parts of a whole song (intro,
+        verse, chorus, verse, chorus, bridge, chorus, ending), one region each, without making it longer. */
+    void   arrangeDrummer (Track&, double start, double lengthBeats);
+    static std::vector<std::pair<juce::String, int>> songPlan (int bars);
     /** The track the drummer listens to (its "follow" choice, or the automatic one). */
     Track* drummerFollowTrack (const Track& drummer) const;
     Clip&  addClip (Track&, Clip clip);

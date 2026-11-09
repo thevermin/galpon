@@ -105,6 +105,23 @@
   const PART_COLORS = { intro: '#7c8cff', verse: '#4aa3df', prechorus: '#3fbfa0', chorus: '#e6a84a', bridge: '#c77dff', solo: '#ff6b6b', outro: '#8e8e96' };
   const PART_ORDER = ['intro', 'verse', 'prechorus', 'chorus', 'bridge', 'solo', 'outro'];
   T.partName = (kind) => { const k = ((G.state && G.state.sectionKinds) || []).find((x) => x[0] === kind); return k ? k[1] : kind; };
+  /** Changes what part a drummer region is (and its name, if it was the part's name). */
+  T.setPart = function (t, c, kind) {
+    const was = T.partName(c.part || '');
+    const args = { trackId: t.id, clipId: c.id, part: kind, unlock: true };
+    if (!c.name || !c.part || c.name.startsWith(was) || c.name === 'Sección' || c.name === 'Verso') args.name = T.partName(kind);
+    return G.run('setClip', args);
+  };
+  T.arrangeDrummer = function (t) {
+    G.modal('Armar la canción por partes', (body, close) => {
+      body.append(
+        el('p.note', { text: 'El baterista corta su tramo en intro, estrofa, estribillo, estrofa, estribillo, puente, estribillo y final, sin hacerlo más largo. Después puedes alargar, mover o generar de nuevo cada parte por separado.' }),
+        el('p.note', { text: 'Las regiones del baterista que editaste a mano se reemplazan.' }),
+        el('div.row.end', null,
+          el('button.btn', { onclick: close }, 'Cancelar'),
+          el('button.btn.primary', { onclick: () => { close(); G.run('arrangeDrummer', { trackId: t.id }); } }, 'Armar')));
+    });
+  };
   const partsCopy = () => ((G.state && G.state.sections) || []).map((p) => ({ beat: p.beat, length: p.length, kind: p.kind }));
   const saveParts = (list) => G.run('setSections', { sections: list });
 
@@ -143,6 +160,8 @@
     strip.innerHTML = '';
     strip.style.width = $('#lanes').style.width;
     const parts = G.state.sections || [];
+    // The parts now live on the drummer's regions; this strip only shows for songs that marked them here
+    $('#part-row').style.display = parts.length ? '' : 'none';
     if (!parts.length) strip.appendChild(el('span.part-empty', { text: 'Arrastra o haz clic aquí para marcar la intro, las estrofas, el estribillo, el puente y el final.' }));
     parts.forEach((p, i) => {
       const node = el('div.part', {
@@ -582,6 +601,7 @@
       'data-clip': c.id, 'data-track': t.id, title: c.name,
     });
     const title = el('span.ctitle', { text: (c.locked && t.kind === 'drummer' ? '✎ ' : '') + c.name });
+    if (t.kind === 'drummer' && c.part) { node.classList.add('part-clip'); node.style.setProperty('--pc', PART_COLORS[c.part] || '#888'); }
     if (!c.midi && c.takes && c.takes.length > 1)
       title.appendChild(el('span.takes', { text: `${c.activeTake + 1}/${c.takes.length}`, title: 'Tomas: clic derecho para elegir otra' }));
     node.appendChild(title);
@@ -732,7 +752,11 @@
     }
     if (t.kind === 'drummer') {
       items.push('-',
-        { label: 'Variar este ritmo', action: () => G.run('varyDrummer', { trackId: t.id, clipId: c.id, unlock: true }) },
+        { heading: 'Esta parte es…' },
+        ...PART_ORDER.map((k) => ({ label: (c.part === k ? '✓ ' : '') + T.partName(k), action: () => T.setPart(t, c, k) })),
+        '-',
+        { label: 'Generar esta parte de nuevo', action: () => G.run('varyDrummer', { trackId: t.id, clipId: c.id, unlock: true }) },
+        { label: 'Armar la canción completa por partes', action: () => T.arrangeDrummer(t) },
         { label: 'Alargar hasta el final de la canción', disabled: songEnd(t.id) <= c.start + c.length + 1e-6,
           action: () => G.run('setClip', { trackId: t.id, clipId: c.id, length: songEnd(t.id) - c.start }) },
         { label: c.fill ? 'Sin redoble al final' : 'Con redoble al final', action: () => G.run('setClip', { trackId: t.id, clipId: c.id, fill: !c.fill }) },

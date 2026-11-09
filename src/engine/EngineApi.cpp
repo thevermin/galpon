@@ -189,6 +189,20 @@ void EngineApi::applyStems()
     touch();
 }
 
+juce::Result EngineApi::useRealDrums (Track& t)
+{
+    const auto file = sounds.installedFile ("virtuosity-drums");
+    if (! file.existsAsFile()) return juce::Result::fail (juce::String (u8"La batería acústica real no está descargada"));
+    auto r = engine.setInstrument (t, "builtin", "sampler", {});
+    if (r.wasOk() && t.instrument.processor != nullptr)
+    {
+        if (auto* b = dynamic_cast<BuiltinProcessor*> (t.instrument.processor.get()))
+            r = b->setExtra ("file", file.getFullPathName());
+        t.instrument.name = juce::String (u8"Batería acústica real");
+    }
+    return r;
+}
+
 juce::var EngineApi::getTick()
 {
     auto* o = new juce::DynamicObject();
@@ -682,6 +696,8 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
     {
         engine.pushUndo();
         auto* t = engine.addTrack (trackKindFromString (arg (args, "kind", "instrument").toString()), arg (args, "preset", "").toString());
+        // The drummer plays the real (recorded) kit when it's been downloaded
+        if (t->kind == TrackKind::Drummer) useRealDrums (*t);
         changed();
         return ok (t->id);
     }
@@ -762,6 +778,17 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
     //---------------------------------------------------------------- real instruments (sampler)
     if (cmd == "downloadSound") return fromResult (sounds.download (arg (args, "id").toString()));
     if (cmd == "cancelDownload") { sounds.cancel (arg (args, "id").toString()); return ok(); }
+    if (cmd == "useRealDrums")
+    {
+        // { trackId }: put the recorded acoustic kit on the drummer (it must be downloaded)
+        auto* t = trackArg();
+        if (t == nullptr) return fail ("Pista inexistente");
+        if (! sounds.installedFile ("virtuosity-drums").existsAsFile()) return fail (juce::String (u8"Primero hay que descargar la batería acústica real"));
+        engine.pushUndo();
+        auto r = useRealDrums (*t);
+        changed();
+        return r.wasOk() ? ok() : fail (r.getErrorMessage());
+    }
     if (cmd == "useSound")
     {
         // { id } or { file } (any .sfz/.wav), optionally { trackId } to put it on an existing track
@@ -1012,7 +1039,23 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
         {
             const juce::ScopedLock sl (engine.lock);
             if (has (args, "start"))      c->start = juce::jmax (0.0, (double) arg (args, "start"));
-            if (has (args, "length"))   { c->length = juce::jmax (0.0625, (double) arg (args, "length")); regen = true; }
+            if (has (args, "length"))
+            {
+                const double oldEnd = c->end();
+                c->length = juce::jmax (0.0625, (double) arg (args, "length"));
+                regen = true;
+                // Drummer parts sit one after the other: making one longer or shorter moves the
+                // ones after it, which keep their rhythm (they aren't rewritten)
+                if (t->kind == TrackKind::Drummer && (bool) arg (args, "ripple", true) && ! has (args, "start"))
+                {
+                    const double delta = c->end() - oldEnd;
+                    for (auto& other : t->clips)
+                        if (&other != c && other.start >= oldEnd - 1.0e-6)
+                            other.start = juce::jmax (0.0, other.start + delta);
+                    t->needsAllNotesOff = true;
+                }
+            }
+            if (has (args, "part"))     { c->part = arg (args, "part").toString(); c->locked = false; regen = true; }
             if (has (args, "name"))       c->name = arg (args, "name").toString();
             if (has (args, "gainDb"))     c->gainDb = juce::jlimit (-60.0f, 24.0f, (float) (double) arg (args, "gainDb"));
             if (has (args, "loopLength")) c->loopLength = juce::jmax (0.25, (double) arg (args, "loopLength"));
@@ -1181,6 +1224,26 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
             t->drummer = d;
         }
         engine.regenerateDrummer (*t, (int) arg (args, "clipId", 0));
+        changed();
+        return ok();
+    }
+    if (cmd == "arrangeDrummer")
+    {
+        // Split the drummer's regions into the parts of a whole song, over the same stretch of time
+        auto* t = trackArg();
+        if (t == nullptr || t->kind != TrackKind::Drummer) return fail (juce::String (u8"Elige la pista del baterista"));
+        engine.pushUndo();
+        const double bpb = song.beatsPerBar();
+        double from = 0, to = 0;
+        if (! t->clips.empty())
+        {
+            from = 1e18;
+            for (auto& c : t->clips) { from = juce::jmin (from, c.start); to = juce::jmax (to, c.end()); }
+        }
+        if (to - from < bpb) { from = 0; to = 16 * bpb; }
+        from = std::floor (from / bpb + 1.0e-6) * bpb;
+        to = from + juce::jmax (1.0, std::round ((to - from) / bpb)) * bpb;
+        engine.arrangeDrummer (*t, from, to - from);
         changed();
         return ok();
     }

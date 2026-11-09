@@ -857,8 +857,7 @@
         listenNote,
         listens ? el('div.row', null, relisten) : null,
         el('div.row', null,
-          el('button.btn', { onclick: () => G.run('varyDrummer', { trackId: track.id, clipId: clip ? clip.id : 0, unlock: true }) }, clip ? 'Variar esta región' : 'Variar'),
-          el('button.btn.primary', { onclick: () => G.run('varyDrummer', { trackId: track.id, unlock: true }) }, 'Generar todo de nuevo'))));
+          el('button.btn', { onclick: () => G.run('varyDrummer', { trackId: track.id, unlock: true }) }, 'Generar todo de nuevo'))));
 
     const kit = el('div.kit');
     const part = (title, key, levelKey, hint) => {
@@ -875,13 +874,44 @@
       part('Toms', 'toms', null, 'Se usan en los redobles'),
       part('Percusión', 'percussion', 'percussionLevel', 'Pandereta, shaker, güira…'));
 
-    body.appendChild(el('div.split', null, left, mid, kit));
+    // The sound: the recorded acoustic kit sounds real; the built-in one is synthesized
+    const real = (G.lib.sounds || []).find((x) => x.id === 'virtuosity-drums');
+    const usingReal = !!(track.instrument && /real/i.test(track.instrument.name || ''));
+    const dlStatus = el('small', { 'data-dl': 'virtuosity-drums', text: '' });
+    let soundAction = null;
+    if (usingReal) soundAction = el('span.note', { text: 'Grabada de una batería de verdad, con varios micrófonos.' });
+    else if (real && real.installed)
+      soundAction = el('button.btn.primary', { onclick: async () => { G.toast('Cargando la batería real… (unos segundos)'); await G.run('useRealDrums', { trackId: track.id }); } }, 'Usar la batería acústica real');
+    else if (real)
+      soundAction = el('button.btn.primary', { disabled: !!real.downloading, onclick: async (e) => {
+        e.target.disabled = true;
+        const r = await G.call('downloadSound', { id: real.id });
+        if (r && r.ok) { G.pendingRealDrums = track.id; dlStatus.textContent = 'Bajando…'; G.toast('Bajando la batería real. Cuando termine, el baterista la usa sola.'); }
+        else { e.target.disabled = false; G.toast((r && r.error) || 'No se pudo bajar', true); }
+      } }, 'Bajar la batería acústica real' + (real.size ? ` (${real.size})` : ''));
+    const sound = el('div.drum-sound' + (usingReal ? '' : '.synth'), null,
+      el('b', { text: 'Sonido' }),
+      el('span.what', { text: usingReal ? 'Batería acústica real' : 'Batería sintetizada (suena electrónica)' }),
+      soundAction, dlStatus);
+
+    // The song in parts: each region of the drummer is one part
+    const parts = el('div.row', { style: { marginBottom: '10px' } },
+      el('b', { text: 'Partes' }),
+      el('span.note', { text: 'Cada región es una parte: alárgala desde su borde (las siguientes se corren) o genérala de nuevo sin tocar las demás.' }),
+      el('button.btn', { onclick: () => G.Timeline.arrangeDrummer(track) }, 'Armar la canción por partes'));
+
+    body.appendChild(sound);
+    body.appendChild(parts);
     if (clip && track.kind === 'drummer') {
-      body.appendChild(el('div.row', { style: { marginTop: '10px' } },
-        el('span.note', { text: `Región seleccionada: ${clip.name}` }),
+      const kinds = (G.state.sectionKinds || []);
+      const colors = { intro: '#7c8cff', verse: '#4aa3df', prechorus: '#3fbfa0', chorus: '#e6a84a', bridge: '#c77dff', solo: '#ff6b6b', outro: '#8e8e96' };
+      body.appendChild(el('div.row', { style: { marginBottom: '10px' } },
+        el('span.note', { text: `“${clip.name}” es:` }),
+        el('div.part-chips', null, ...kinds.map(([id, name]) => el('button.pill' + (clip.part === id ? '.on' : ''), { style: { '--pc': colors[id] }, onclick: () => G.Timeline.setPart(track, clip, id) }, name))),
+        el('button.btn', { onclick: () => G.run('varyDrummer', { trackId: track.id, clipId: clip.id, unlock: true }) }, 'Generar esta parte de nuevo'),
         el('button.pill' + (clip.fill ? '.on' : ''), { onclick: () => G.run('setClip', { trackId: track.id, clipId: clip.id, fill: !clip.fill }) }, 'Redoble al final'),
-        el('span.note', { text: 'Para que dure más, arrastra su borde derecho (o clic derecho › Alargar hasta el final). Marca las partes arriba, en “Partes”, y el baterista cambia en cada una.' }),
-        clip.locked ? el('span.note', { text: 'Editada a mano: el baterista no la cambia (usa “Variar” para devolvérsela).' }) : null));
+        clip.locked ? el('span.note', { text: 'Editada a mano: el baterista no la cambia (genérala de nuevo para devolvérsela).' }) : null));
     }
+    body.appendChild(el('div.split', null, left, mid, kit));
   };
 })();

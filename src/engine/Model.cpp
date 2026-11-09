@@ -116,6 +116,7 @@ juce::var clipToVar (const Clip& c, bool includeNotes)
     o->setProperty ("seed", c.seed);
     o->setProperty ("locked", c.locked);
     o->setProperty ("fill", c.fill);
+    if (c.part.isNotEmpty()) o->setProperty ("part", c.part);
 
     if (c.midi)
     {
@@ -166,6 +167,7 @@ void clipFromVar (Clip& c, const juce::var& v)
     c.seed       = (int) getOrDefault (v, "seed", c.seed);
     c.locked     = (bool) getOrDefault (v, "locked", c.locked);
     c.fill       = (bool) getOrDefault (v, "fill", c.fill);
+    c.part       = getOrDefault (v, "part", c.part).toString();
 
     if (auto notes = getOrDefault (v, "notes", {}); notes.isArray())
     {

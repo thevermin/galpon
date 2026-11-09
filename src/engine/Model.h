@@ -79,6 +79,7 @@ struct Clip
     int          seed   = 1;
     bool         locked = false;
     bool         fill   = true;
+    juce::String part;   // drummer: which part of the song this region is (intro, verse, chorus…), "" = not set
 
     // Audio clips
     juce::String audioFile;                                  // file name inside the song's Audio folder

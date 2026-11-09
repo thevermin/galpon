@@ -230,10 +230,11 @@ static void testDrummer()
     // Through the engine
     TestEngine t;
     auto* d = t.engine.addTrack (TrackKind::Drummer);
-    CHECK (! d->clips.empty() && d->clips[0].notes.size() > 20, "la pista de baterista arranca con un patrón");
-    const auto before = d->clips[0].notes.size();
+    auto allNotes = [&] { size_t n = 0; for (auto& c : d->clips) n += c.notes.size(); return n; };
+    CHECK (d->clips.size() >= 6 && allNotes() > 100, "la pista de baterista arranca con una canción armada por partes");
+    const auto before = allNotes();
     t.api.call ("setDrummer", juce::JSON::parse (R"({"trackId":)" + juce::String (d->id) + R"(,"settings":{"complexity":1.0,"cymbalLevel":6}})"));
-    CHECK (d->clips[0].notes.size() > before, "cambiar ajustes regenera el patrón");
+    CHECK (allNotes() > before, "cambiar ajustes regenera el patrón");
     t.engine.setPositionBeats (0);
     t.engine.play();
     auto out = t.render (8.0);
@@ -362,6 +363,90 @@ static void testDrummerParts()
         t.api.call ("undo", {});
         CHECK (t.engine.song.sections.empty(), "deshacer quita las partes");
     }
+}
+
+static void testDrummerArrangement()
+{
+    std::cout << "Baterista: la canción por partes\n";
+    // The plan always fills exactly the bars it's given
+    for (int bars : { 1, 4, 8, 13, 16, 40, 56, 100 })
+    {
+        int sum = 0;
+        auto plan = Engine::songPlan (bars);
+        for (auto& p : plan) sum += p.second;
+        CHECK (sum == bars && ! plan.empty(), "el plan de " << bars << " compases suma justo (" << sum << ")");
+    }
+    auto plan = Engine::songPlan (56);
+    CHECK (plan.size() == 8 && plan.front().first == "intro" && plan.back().first == "outro" && plan[2].first == "chorus" && plan[5].first == "bridge",
+           "una canción completa: intro, estrofa, estribillo, estrofa, estribillo, puente, estribillo, final");
+
+    TestEngine t;
+    auto* d = t.engine.addTrack (TrackKind::Drummer);
+    const double bpb = t.engine.song.beatsPerBar();
+    double end = 0;
+    for (auto& c : d->clips) end = juce::jmax (end, c.end());
+    CHECK (std::abs (end - 16 * bpb) < 1e-6, "una pista nueva arma la canción en 16 compases (no más larga)");
+    bool contiguous = true;
+    for (size_t i = 1; i < d->clips.size(); ++i) contiguous &= std::abs (d->clips[i].start - d->clips[i - 1].end()) < 1e-6;
+    CHECK (contiguous, "las partes van una detrás de la otra");
+    CHECK (d->clips[2].part == "chorus" && d->clips[2].name.startsWith (juce::String (u8"Estribillo")), "cada región dice qué parte es");
+
+    // the same kind of part plays the same groove
+    auto kicks = [] (const Clip& c) { std::vector<int> k; for (auto& n : c.notes) if (n.pitch == 36 && n.beat < 4) k.push_back ((int) std::lround (n.beat * 4)); return k; };
+    Clip* ch1 = nullptr; Clip* ch2 = nullptr;
+    for (auto& c : d->clips) if (c.part == "chorus") { if (! ch1) ch1 = &c; else if (! ch2) ch2 = &c; }
+    CHECK (ch1 && ch2 && kicks (*ch1) == kicks (*ch2), "los estribillos tocan el mismo groove");
+
+    // The ending: one last hit
+    auto& last = d->clips.back();
+    bool hitOnly = true;
+    for (auto& n : last.notes) if (n.beat >= last.length - bpb + 0.1) hitOnly = false;
+    CHECK (last.part == "outro" && hitOnly, "el final termina con un golpe");
+
+    // Stretching a part moves the next ones and doesn't rewrite them
+    const int id = d->clips[1].id;
+    const double nextStart = d->clips[2].start;
+    const auto nextNotes = d->clips[2].notes.size();
+    const auto lastStart = d->clips.back().start;
+    t.api.call ("setClip", juce::JSON::parse ("{\"trackId\":" + juce::String (d->id) + ",\"clipId\":" + juce::String (id) + ",\"length\":" + juce::String (d->clips[1].length + 2 * bpb) + "}"));
+    CHECK (std::abs (d->clips[2].start - (nextStart + 2 * bpb)) < 1e-6 && std::abs (d->clips.back().start - (lastStart + 2 * bpb)) < 1e-6,
+           "alargar una parte corre las siguientes");
+    CHECK (d->clips[2].notes.size() == nextNotes, "las otras partes no cambian");
+
+    // Regenerating one part leaves the others alone
+    std::vector<size_t> sizes; std::vector<int> seeds;
+    for (auto& c : d->clips) { sizes.push_back (c.notes.size()); seeds.push_back (c.seed); }
+    t.api.call ("varyDrummer", juce::JSON::parse ("{\"trackId\":" + juce::String (d->id) + ",\"clipId\":" + juce::String (d->clips[3].id) + "}"));
+    bool others = true;
+    for (size_t i = 0; i < d->clips.size(); ++i) if (i != 3) others &= d->clips[i].seed == seeds[i] && d->clips[i].notes.size() == sizes[i];
+    CHECK (others && d->clips[3].seed != seeds[3], "generar una parte de nuevo no toca las demás");
+
+    // Changing what a part is
+    t.api.call ("setClip", juce::JSON::parse ("{\"trackId\":" + juce::String (d->id) + ",\"clipId\":" + juce::String (d->clips[1].id) + ",\"part\":\"bridge\"}"));
+    CHECK (d->clips[1].part == "bridge", "se puede cambiar qué parte es una región");
+
+    // Re-arranging keeps the same stretch of time
+    double from = 1e9, to = 0;
+    for (auto& c : d->clips) { from = juce::jmin (from, c.start); to = juce::jmax (to, c.end()); }
+    t.api.call ("arrangeDrummer", juce::JSON::parse ("{\"trackId\":" + juce::String (d->id) + "}"));
+    double from2 = 1e9, to2 = 0;
+    for (auto& c : d->clips) { from2 = juce::jmin (from2, c.start); to2 = juce::jmax (to2, c.end()); }
+    CHECK (std::abs (from - from2) < 1e-6 && std::abs (to - to2) < 1e-6 && d->clips.size() == 8, "armar de nuevo usa el mismo tramo");
+
+    // Saved with the song
+    auto v = clipToVar (d->clips[2]);
+    Clip back; clipFromVar (back, v);
+    CHECK (back.part == d->clips[2].part, "la parte se guarda con la región");
+
+    // The real kit: Galpon writes a program with the toms on the drummer's keys
+    auto kitDir = t.root.getChildFile ("kit/Programs");
+    kitDir.getChildFile ("keymaps").createDirectory();
+    kitDir.getChildFile ("keymaps/keymap_basic.sfz").replaceWithText ("#define $LTOM_CENTER_KEY 41\n#define $LTOM_OFFCENTER_KEY 43\n#define $LTOM_RIMSHOT_KEY 45\n#define $LTOM_CROSSSTICK_KEY 47\n#define $HTOM_CENTER_KEY 48\n#define $HTOM_OFFCENTER_KEY 50\n#define $SNARE_CENTER_KEY 38\n");
+    kitDir.getChildFile ("01-basic-kit.sfz").replaceWithText ("#include \"keymaps/keymap_basic.sfz\"\n<region> key=$SNARE_CENTER_KEY sample=x.wav\n");
+    auto kit = SoundLibrary::drumKitForDrummer (kitDir.getChildFile ("01-basic-kit.sfz"));
+    auto map = kitDir.getChildFile ("keymaps/keymap_galpon.sfz").loadFileAsString();
+    CHECK (kit.existsAsFile() && kit.loadFileAsString().contains ("keymap_galpon.sfz") && map.contains ("$LTOM_CENTER_KEY 45") && map.contains ("$HTOM_OFFCENTER_KEY 47")
+           && map.contains ("$SNARE_CENTER_KEY 38"), "la batería real queda con los toms donde los toca el baterista");
 }
 
 static void testRecording()
@@ -2215,6 +2300,7 @@ int main()
     testPlayback();
     testDrummer();
     testDrummerParts();
+    testDrummerArrangement();
     testRecording();
     testRecordingSafety();
     testSaveLoadUndoExport();

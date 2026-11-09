@@ -146,6 +146,14 @@ input, select { font: inherit; color: var(--text); }
 .clip.rec .recwave { position: absolute; left: 0; right: 0; top: 20px; bottom: 0; overflow: hidden; }
 .clip.rec .recwave canvas { position: absolute; top: 0; height: 100%; }
 @keyframes recblink { 50% { opacity: .55; } }
+.clip.part-clip .ctitle::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--pc); margin-right: 5px; vertical-align: 0; box-shadow: 0 0 0 1px rgba(0,0,0,.4); }
+.clip.part-clip { box-shadow: inset 0 3px 0 var(--pc); }
+.drum-sound { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; margin-bottom: 10px; border-radius: 8px; background: #1d1d20; border: 1px solid var(--line); }
+.drum-sound.synth { border-color: #4a3a1e; background: #221d16; }
+.drum-sound b { font-size: 12px; }
+.drum-sound .what { font-size: 12.5px; }
+.part-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.part-chips .pill { border-left: 3px solid var(--pc); }
 .clip .grip { position: absolute; top: 0; bottom: 0; right: 0; width: 10px; cursor: ew-resize; border-radius: 0 5px 5px 0; }
 .clip:hover .grip, .clip.sel .grip { background: linear-gradient(90deg, transparent 3px, color-mix(in srgb, var(--c) 70%, #fff) 3px, color-mix(in srgb, var(--c) 70%, #fff) 5px, transparent 5px); opacity: .8; }
 .clip .grip:hover { background: color-mix(in srgb, var(--c) 45%, transparent); }

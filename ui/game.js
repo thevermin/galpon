@@ -400,11 +400,19 @@
   function applySize() {
     if (!play || !hw) return;
     const d = dims();
-    const is3d = opts.view === '3d';
-    const avail = (ui.stage ? ui.stage.clientHeight : 600) - (ui.lyrics.classList.contains('empty') ? 0 : 70) - 40;
-    ui.hwwrap.style.height = (is3d ? Math.max(220, Math.min(avail, Math.round(400 * opts.size))) : d.hwH) + 'px';
+    const v = opts.view;   // '2d', '3d' or 'both'
+    const avail = (ui.stage ? ui.stage.clientHeight : 600) - (ui.lyrics.classList.contains('empty') ? 0 : 76) - 46;
+    // the tab when it's shown together with the 3D: a bit smaller, under it
+    const tabH = d.hwH;
+    const h3 = v === '3d' ? Math.max(260, avail) : v === 'both' ? Math.max(220, avail - tabH - 6) : 0;
+    ui.hwwrap.style.height = (v === '2d' ? d.hwH : v === '3d' ? h3 : h3 + 6 + tabH) + 'px';
+    hw3.style.display = v === '2d' ? 'none' : '';
+    hw3.style.height = h3 + 'px';
+    hw.style.display = v === '3d' ? 'none' : '';
+    hw.style.top = v === 'both' ? (h3 + 6) + 'px' : '0px';
+    hw.style.height = tabH + 'px';
     ui.fbrow.style.height = d.fbH + 'px';
-    ui.fbrow.style.display = is3d ? 'none' : '';
+    ui.fbrow.style.display = v === '2d' ? '' : 'none';
     if (ui.viewBtns) ui.viewBtns.forEach((b) => b.classList.toggle('on', b.dataset.v === opts.view));
     ui.lyrics.style.fontSize = Math.round(24 * Math.max(0.85, Math.min(1.3, opts.size))) + 'px';
   }
@@ -417,7 +425,7 @@
   const rowOf = (s, n) => (opts.invert ? s : n - 1 - s);
 
   // ------------------------------------------------------------------ play screen
-  let hw, fb, ui = {};
+  let hw, hw3, fb, ui = {};
   function renderPlay() {
     const p = play, a = p.arr;
     stopDrawing();
@@ -439,18 +447,22 @@
     ui.hud = el('div.g-hud', { 'aria-live': 'off' });
 
     hw = el('canvas.g-highway', { 'aria-label': 'Autopista de notas: las notas llegan de derecha a izquierda hasta la línea blanca' });
-    hw.addEventListener('wheel', (e) => {
+    hw3 = el('canvas.g-highway.g-hw3', { 'aria-label': 'Mástil en 3D: las notas vienen del fondo hacia su cuerda y su traste' });
+    const onWheel = (e) => {
       e.preventDefault();
       if (e.ctrlKey || e.metaKey) { setSize(opts.size * (e.deltaY < 0 ? 1.05 : 0.95)); return; }
       if (!p.playing) seek(Math.max(0, displayPos() + e.deltaY / 400 + e.deltaX / 400));
-    }, { passive: false });
+    };
+    hw.addEventListener('wheel', onWheel, { passive: false });
+    hw3.addEventListener('wheel', onWheel, { passive: false });
     fb = el('canvas.g-fretboard', { 'aria-label': 'Diapasón: dónde van los dedos ahora' });
     ui.next = el('div.g-next');
     ui.feedback = el('div.g-feedback');
     ui.lyrics = el('div.g-lyrics', { 'aria-live': 'off' });
     ui.toneNow = el('div.g-tonenow');
 
-    ui.viewBtns = ['2d', '3d'].map((v) => el('button.g-view' + (opts.view === v ? '.on' : ''), { 'data-v': v, title: v === '3d' ? 'Vista 3D, como Rocksmith (V)' : 'Vista de tablatura (V)', onclick: () => setView(v) }, v.toUpperCase()));
+    const VIEW = { '2d': ['2D', 'Tablatura (V)'], '3d': ['3D', 'Mástil en 3D, como Rocksmith (V)'], both: ['2D+3D', 'Las dos a la vez: el 3D arriba y la tablatura abajo (V)'] };
+    ui.viewBtns = ['2d', '3d', 'both'].map((v) => el('button.g-view' + (opts.view === v ? '.on' : ''), { 'data-v': v, title: VIEW[v][1], onclick: () => setView(v) }, VIEW[v][0]));
     const sizeCtl = el('div.g-size', { role: 'group', 'aria-label': 'Vista y tamaño' },
       ...ui.viewBtns, el('i.g-sizesep'),
       el('button', { 'aria-label': 'Achicar', title: 'Achicar (−)', onclick: () => setSize(opts.size - 0.1) }, '−'),
@@ -484,7 +496,7 @@
       el('span.spacer'),
       el('div.g-group', null, ui.volBtn, ui.soundBtn, el('button.g-btn', { onclick: tune }, G.icon('tuner', 15), 'Afinar')));
 
-    ui.hwwrap = el('div.g-hwwrap', null, hw, sizeCtl, ui.feedback, ui.toneNow);
+    ui.hwwrap = el('div.g-hwwrap', null, hw3, hw, sizeCtl, ui.feedback, ui.toneNow);
     ui.fbrow = el('div.g-fbrow', null, ui.next, el('div.g-fbwrap', null, fb));
     root.replaceChildren(el('div.g-play-screen', null, head,
       ui.stage = el('div.g-stage', null, ui.hwwrap, ui.lyrics, ui.fbrow, ui.panel),
@@ -780,7 +792,7 @@
         el('li', null, el('b', { text: 'Recuadro dorado con nombre: acorde.' })),
         el('li', null, el('b', { text: 'Letras arriba de la nota:' }), ' H ligado hacia arriba, P hacia abajo, ↑ bend, ↗ ↘ slide, PM palm mute, Arm. armónico, ✕ nota apagada.'),
         el('li', null, el('b', { text: 'Abajo, el diapasón' }), ' te muestra dónde poner la mano (zona dorada) y qué trastes vienen.'),
-        el('li', null, el('b', { text: 'Vista 3D (botón 3D o tecla V):' }), ' el mástil en perspectiva, como Rocksmith. Las notas vienen desde el fondo hacia su cuerda, sobre su traste; la zona dorada es donde va la mano.')),
+        el('li', null, el('b', { text: 'Vista 3D (botón 3D o tecla V):' }), ' el mástil en perspectiva, como Rocksmith, con la cuerda más grave arriba. Cada nota viene desde el fondo a la altura de su cuerda y por el carril de su traste; el carril se ilumina y el número de abajo te dice qué traste es. La zona dorada es donde va la mano. Con 2D+3D ves las dos cosas a la vez.')),
       el('div.row.end', null, el('button.btn.primary', { onclick: () => help.remove() }, 'Entendido')));
     ui.hwwrap.append(help);
   }
@@ -804,7 +816,7 @@
       const check = (label, key, after) => el('label.g-optrow', null, el('input', { type: 'checkbox', checked: opts[key], onchange: (e) => { opts[key] = e.target.checked; store.set(key, opts[key]); after && after(); } }), ' ' + label);
       body.append(
         el('h4', { text: 'Cómo se ve' }),
-        el('div.g-optrow', null, el('label', { text: 'Vista' }), seg([['2d', 'Tablatura (2D)'], ['3d', 'Mástil en 3D, como Rocksmith']], opts.view, (v) => setView(v))),
+        el('div.g-optrow', null, el('label', { text: 'Vista' }), seg([['2d', 'Tablatura (2D)'], ['3d', 'Mástil en 3D, como Rocksmith'], ['both', 'Las dos a la vez']], opts.view, (v) => setView(v))),
         el('div.g-optrow', null, el('label', { text: 'Orden de las cuerdas' }),
           seg([['tab', 'Como tablatura (aguda arriba)'], ['rs', 'Como Rocksmith (grave arriba)']], opts.invert ? 'rs' : 'tab', (v) => { opts.invert = v === 'rs'; store.set('invert', opts.invert); })),
         el('div.g-optrow', null, el('label', { text: 'Colores de las cuerdas' }), seg([['classic', 'Clásicos'], ['soft', 'Suaves']], opts.palette, (v) => { opts.palette = v; store.set('palette', v); })),
@@ -937,8 +949,9 @@
   function draw() {
     if (!play || !hw || !hw.isConnected) return;
     const now = displayPos();
-    if (opts.view === '3d') drawHighway3D(now);
-    else { drawHighway(now); drawFretboard(now); }
+    if (opts.view !== '2d') drawHighway3D(now);
+    if (opts.view !== '3d') drawHighway(now);
+    if (opts.view === '2d') drawFretboard(now);
     drawLyrics(now);
     const sec = sectionAt(now);
     ui.time.textContent = fmtTime(now) + ' / ' + fmtTime(play.length);
@@ -1133,7 +1146,7 @@
       number is on the neck. The camera drifts slowly to where the hand goes. */
   const cam = { x: 4, span: 8, t: 0 };
   function drawHighway3D(now) {
-    const { ctx, w, h } = fit(hw);
+    const { ctx, w, h } = fit(hw3);
     const p = play, n = p.strings, s = opts.size;
 
     // ---- where the hand goes: look a little ahead and glide there (time-based, not per frame)
@@ -1142,11 +1155,12 @@
     cam.t = wall;
     let anchor = null, nextAnchor = null;
     for (const a of p.anchors) { if (a.time <= now + 0.15) anchor = a; else { nextAnchor = a; break; } }
+    if (!anchor && nextAnchor) { anchor = nextAnchor; nextAnchor = p.anchors[1] || null; }   // before the first note: start where the song starts
     const aFret = anchor ? anchor.fret : 1, aWidth = anchor ? (anchor.width || 4) : 4;
     // start drifting towards the next position a second before it comes
     let goal = anchor || { fret: 1, width: 4 };
     if (nextAnchor && nextAnchor.time - now < 1.0) goal = nextAnchor;
-    const targetX = Math.max(goal.fret - 1 + (goal.width || 4) / 2 + 0.6, 4);
+    const targetX = Math.max(goal.fret - 1 + (goal.width || 4) / 2, 2.5);
     const targetSpan = Math.max((goal.width || 4) + 4, 7.5);
     if (!dt || Math.abs(targetX - cam.x) > 14) { cam.x = targetX; cam.span = targetSpan; }   // first frame or a jump in the song
     else {
@@ -1159,17 +1173,22 @@
     const span = cam.span;
     const ahead = 3.2 / opts.zoom;                       // seconds visible into the distance
     const depth = (span * 1.7) / ahead;                  // world units per second
-    const strGap = Math.min(0.42, 2.1 / n) * Math.min(1.25, Math.max(0.8, s));
-    const hOf = (str) => (n - rowOf(str, n)) * strGap;  // height above the floor (top row highest)
-    const C = { x: cam.x - span * 0.22, y: span * 0.5, z: -span * 1.0 };   // above, behind and a bit to the left
-    const T = { x: cam.x + span * 0.08, y: 0, z: span * 1.0 };
+    const strGap = Math.min(0.34, 1.75 / n) * Math.min(1.25, Math.max(0.8, s));
+    // Like Rocksmith: the thickest string on top (as you see your own guitar looking down)
+    const hOf = (str) => (n - str) * strGap;            // height above the floor: string 0 (the lowest) highest
+    // The camera sits above and behind, off to the right of the hand; low on the neck it looks
+    // across more, higher up it comes round towards the middle (the neck turns as you move)
+    const along = Math.min(1, Math.max(0, (cam.x - 3) / 14));
+    const side = span * (0.3 - 0.18 * along);
+    const C = { x: cam.x + side, y: span * 0.5, z: -span * 1.0 };
+    const T = { x: cam.x - side * 0.15, y: 0, z: span * 0.8 };
     let F = { x: T.x - C.x, y: T.y - C.y, z: T.z - C.z };
     const fl = Math.hypot(F.x, F.y, F.z); F = { x: F.x / fl, y: F.y / fl, z: F.z / fl };
     let R = { x: F.z, y: 0, z: -F.x };
     const rl = Math.hypot(R.x, R.z); R = { x: R.x / rl, y: 0, z: R.z / rl };
     const U = { x: F.y * R.z - F.z * R.y, y: F.z * R.x - F.x * R.z, z: F.x * R.y - F.y * R.x };
     const focal = Math.min(w * 0.95, h * 1.9) * Math.min(1.2, Math.max(0.85, s));
-    const ox = w * 0.5, oy = h * 0.3;
+    const ox = w * 0.5, oy = h * 0.36;
     /** world (fret X, height Y, seconds ahead) -> screen [x, y, scale] */
     const P = (X, Y, sec) => {
       const dx = X - C.x, dy = Y - C.y, dz = Math.max(-0.3, sec) * depth - C.z;
@@ -1184,7 +1203,7 @@
     };
     const floorQuad = (x0, x1, z0, z1, fill) => poly([P(x0, 0, z0), P(x1, 0, z0), P(x1, 0, z1), P(x0, 0, z1)], fill);
     const zFar = ahead;
-    const fMin = Math.max(0, Math.floor(cam.x - span * 0.75)), fMax = Math.min(24, Math.ceil(cam.x + span * 0.85));
+    const fMin = Math.max(0, Math.floor(cam.x - span * 0.85)), fMax = Math.min(24, Math.ceil(cam.x + span * 0.6));
 
     // ---- background, floor, the hand's zone
     const grad = ctx.createLinearGradient(0, 0, 0, h);
@@ -1249,43 +1268,6 @@
       ctx.globalAlpha = 1;
     }
 
-    // ---- the neck where the notes land: strings across, fret wires, dots, numbers
-    const nut = P(fMin, 0, 0), end = P(fMax, 0, 0);
-    poly([P(fMin, -0.02, 0), P(fMax, -0.02, 0), P(fMax, hOf(rowOf(0, n) === 0 ? 0 : n - 1) + strGap * 0.6, 0), P(fMin, hOf(rowOf(0, n) === 0 ? 0 : n - 1) + strGap * 0.6, 0)], 'rgba(40,32,24,0.55)');
-    void nut; void end;
-    for (let f = fMin; f <= fMax; f++) {
-      const a = P(f, 0, 0), b = P(f, n * strGap + strGap * 0.4, 0);
-      ctx.strokeStyle = f === 0 ? '#d8d2c8' : 'rgba(190,182,170,0.55)'; ctx.lineWidth = f === 0 ? 4 : 1.6;
-      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-    }
-    for (const f of [3, 5, 7, 9, 12, 15, 17, 19, 21, 24]) {
-      if (f <= fMin || f > fMax) continue;
-      const q = P(f - 0.5, strGap * 0.15, 0);
-      ctx.fillStyle = 'rgba(255,255,255,0.16)';
-      ctx.beginPath(); ctx.ellipse(q[0], q[1], Math.max(2, q[2] * 0.06), Math.max(1.5, q[2] * 0.03), 0, 0, 7); ctx.fill();
-    }
-    for (let str = 0; str < n; str++) {
-      const a = P(fMin - 0.3, hOf(str), 0), b = P(fMax + 0.3, hOf(str), 0);
-      ctx.strokeStyle = colour(str); ctx.globalAlpha = 0.95;
-      ctx.lineWidth = Math.max(1.4, (1.2 + (n - 1 - str) * 0.3) * Math.min(1.6, a[2] * 0.012));
-      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    ctx.textAlign = 'center';
-    for (let f = Math.max(1, fMin + 1); f <= fMax; f++) {
-      const q = P(f - 0.5, -0.05, -0.12);
-      const inZone = f >= aFret && f <= aFret - 1 + aWidth;
-      const lit = soon.has(f);
-      const size = Math.round(Math.max(11, Math.min(22, q[2] * 0.2)) * (lit ? 1.25 : 1));
-      ctx.font = '700 ' + size + 'px "Space Grotesk", Inter, sans-serif';
-      ctx.fillStyle = lit ? '#ffe2a8' : inZone ? '#e6a84a' : '#6f685e';
-      ctx.fillText(String(f), q[0], q[1] + size * 0.7);
-    }
-    // string names at the left of the neck
-    ctx.font = '700 12px Inter, system-ui, sans-serif'; ctx.textAlign = 'right';
-    for (let str = 0; str < n; str++) { const q = P(fMin - 0.35, hOf(str), 0); ctx.fillStyle = colour(str); ctx.fillText(LETTER[p.pitches[str] % 12], q[0] - 4, q[1]); }
-    ctx.textAlign = 'center';
-
     // ---- chord frames (behind their notes)
     const gemSize = (q) => Math.max(5, Math.min(q[2] * 0.7, q[2] * strGap * 1.45));
     for (let ci = lowerBound(p.chords, now - 0.1, 't'); ci < p.chords.length && p.chords[ci].t <= now + zFar; ci++) {
@@ -1306,10 +1288,11 @@
       ctx.globalAlpha = 1;
     }
 
-    // ---- the notes, far to near
-    for (const i of list) {
+    // ---- the notes, far to near. Strings go in front of the notes still coming (that's depth),
+    // the notes arriving go on top of the strings.
+    const drawNote = (i) => {
       const nt = p.items[i], str = nt.s | 0;
-      if (str < 0 || str >= n) continue;
+      if (str < 0 || str >= n) return;
       const c = colour(str), sus = nt.sus || 0;
       const z = Math.max(0, nt.t - now);
       const holding = sus >= 0.08 && now >= nt.t && now <= nt.t + sus;
@@ -1331,15 +1314,15 @@
       }
       const q = P(X, Y, z);
       if (passed) {
-        if (!mk || !mk.hit) continue;
+        if (!mk || !mk.hit) return;
         const age = (performance.now() - mk.at) / 1000;
-        if (age > 0.5) continue;
+        if (age > 0.5) return;
         const q0 = P(X, Y, 0);
         ctx.globalAlpha = 1 - age / 0.5;
         ctx.strokeStyle = c; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.arc(q0[0], q0[1], gemSize(q0) * (0.6 + age), 0, 7); ctx.stroke();
         ctx.globalAlpha = 1;
-        continue;
+        return;
       }
       const g = gemSize(q);
       ctx.globalAlpha = fade * (mk && !mk.hit ? 0.45 : 1);
@@ -1378,7 +1361,47 @@
         ctx.fillStyle = '#ededef'; ctx.fillText(tag, q[0], q[1] - g / 2 - th / 2 - 2.5);
       }
       ctx.globalAlpha = 1;
+    };
+    const arriving = (i) => p.items[i].t - now <= 0.06;
+    for (const i of list) if (!arriving(i)) drawNote(i);
+    // ---- the neck where the notes land: strings across, fret wires, dots, numbers
+    const nut = P(fMin, 0, 0), end = P(fMax, 0, 0);
+    poly([P(fMin, -0.02, 0), P(fMax, -0.02, 0), P(fMax, n * strGap + strGap * 0.6, 0), P(fMin, n * strGap + strGap * 0.6, 0)], 'rgba(40,32,24,0.55)');
+    void nut; void end;
+    for (let f = fMin; f <= fMax; f++) {
+      const a = P(f, 0, 0), b = P(f, n * strGap + strGap * 0.4, 0);
+      ctx.strokeStyle = f === 0 ? '#d8d2c8' : 'rgba(190,182,170,0.55)'; ctx.lineWidth = f === 0 ? 4 : 1.6;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
+    for (const f of [3, 5, 7, 9, 12, 15, 17, 19, 21, 24]) {
+      if (f <= fMin || f > fMax) continue;
+      const q = P(f - 0.5, strGap * 0.15, 0);
+      ctx.fillStyle = 'rgba(255,255,255,0.16)';
+      ctx.beginPath(); ctx.ellipse(q[0], q[1], Math.max(2, q[2] * 0.06), Math.max(1.5, q[2] * 0.03), 0, 0, 7); ctx.fill();
+    }
+    for (let str = 0; str < n; str++) {
+      const a = P(fMin - 0.3, hOf(str), 0), b = P(fMax + 0.3, hOf(str), 0);
+      ctx.strokeStyle = colour(str); ctx.globalAlpha = 0.95;
+      ctx.lineWidth = Math.max(1.4, (1.2 + (n - 1 - str) * 0.3) * Math.min(1.6, a[2] * 0.012));
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign = 'center';
+    for (let f = Math.max(1, fMin + 1); f <= fMax; f++) {
+      const q = P(f - 0.5, -0.05, -0.12);
+      const inZone = f >= aFret && f <= aFret - 1 + aWidth;
+      const lit = soon.has(f);
+      const size = Math.round(Math.max(11, Math.min(22, q[2] * 0.2)) * (lit ? 1.25 : 1));
+      ctx.font = '700 ' + size + 'px "Space Grotesk", Inter, sans-serif';
+      ctx.fillStyle = lit ? '#ffe2a8' : inZone ? '#e6a84a' : '#6f685e';
+      ctx.fillText(String(f), q[0], q[1] + size * 0.7);
+    }
+    // string names at the left of the neck
+    ctx.font = '700 12px Inter, system-ui, sans-serif'; ctx.textAlign = 'right';
+    for (let str = 0; str < n; str++) { const q = P(fMin - 0.35, hOf(str), 0); ctx.fillStyle = colour(str); ctx.fillText(LETTER[p.pitches[str] % 12], q[0] - 4, q[1]); }
+    ctx.textAlign = 'center';
+
+    for (const i of list) if (arriving(i)) drawNote(i);
 
     // ---- what comes next, top left
     let nextChord = null;
@@ -1571,7 +1594,7 @@
     if (k === 'arrowleft') { e.preventDefault(); seek(displayPos() - (e.shiftKey ? 10 : 3)); }
     else if (k === 'arrowright') { e.preventDefault(); seek(displayPos() + (e.shiftKey ? 10 : 3)); }
     else if (k === 'l') abButton();
-    else if (k === 'v') setView(opts.view === '3d' ? '2d' : '3d');
+    else if (k === 'v') setView({ '2d': '3d', '3d': 'both', both: '2d' }[opts.view] || '2d');
     else if (k === '+' || k === '=') setSize(opts.size + 0.1);
     else if (k === '-' || k === '_') setSize(opts.size - 0.1);
     else if (k === 'escape') { if (panel) togglePanel(null); else if (play.loop || play.markA !== null) setLoop(null); }

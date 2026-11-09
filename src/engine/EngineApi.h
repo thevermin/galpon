@@ -35,6 +35,8 @@ public:
     std::function<juce::Result (int trackId, int slotIndex)> openPluginEditor;
 
 private:
+    /** Puts the recorded acoustic kit on a track (when it has been downloaded). */
+    juce::Result useRealDrums (Track&);
     juce::var callUnchecked (const juce::String& command, const juce::var& args);
     juce::var slotInfo (const Slot&) const;
     juce::var paramsFor (int trackId, int slot);

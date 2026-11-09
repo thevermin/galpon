@@ -41,13 +41,25 @@
   let sections = [{ beat: 0, length: 16, kind: 'intro' }, { beat: 16, length: 32, kind: 'verse' }];
   const sectionKinds = [['intro', 'Intro'], ['verse', 'Estrofa'], ['prechorus', 'Pre-estribillo'], ['chorus', 'Estribillo'], ['bridge', 'Puente'], ['solo', 'Solo'], ['outro', 'Final']];
   function track(id) { return tracks.find((t) => t.id === id); }
+  const PLAN = [['intro', 'Intro', 1], ['verse', 'Estrofa', 2], ['chorus', 'Estribillo', 2], ['verse', 'Estrofa', 2], ['chorus', 'Estribillo', 2], ['bridge', 'Puente', 2], ['chorus', 'Estribillo', 2], ['outro', 'Final', 1]];
+  function arrange(t, from, beats) {
+    t.clips = t.clips.filter((c) => c.start + c.length <= from || c.start >= from + beats);
+    const bars = beats / 4, total = 14; let at = from; const n = {};
+    PLAN.forEach(([part, name, w], i) => {
+      const len = i === PLAN.length - 1 ? from + beats - at : Math.max(1, Math.round(w * bars / total)) * 4;
+      n[part] = (n[part] || 0) + 1;
+      const many = PLAN.filter((x) => x[0] === part).length > 1;
+      t.clips.push({ id: nextId++, name: name + (many ? ' ' + n[part] : ''), part, start: at, length: len, midi: true, loopLength: len, seed: 1, locked: false, fill: part !== 'outro', notes: drumNotes(len, part.length) });
+      at += len;
+    });
+  }
   function addTrack(kind, preset) {
     const t = { id: nextId++, kind, name: kind === 'drummer' ? 'Baterista IA' : kind === 'audio' ? 'Audio ' + (tracks.length + 1) : kind === 'bus' ? (preset === 'delay' ? 'Delay' : 'Reverb') : preset || 'Piano de cola',
       colour: kind === 'drummer' ? '#E6A84A' : kind === 'bus' ? '#94A3B8' : palette[tracks.length % 4], sends: [], output: 0, volumeDb: 0, pan: 0, mute: false, solo: false, armed: false, monitor: false,
       inputChannel: 0, stereoInput: false, inserts: [], clips: [],
       instrument: kind === 'audio' || kind === 'bus' ? undefined : { kind: 'builtin', name: kind === 'drummer' ? 'Batería acústica' : preset || 'Piano de cola', type: 'piano', bypass: false, missing: false, hasEditor: false },
       drummer: { style: 'rock', complexity: 0.4, loudness: 0.6, fills: 0.35, swing: 0, humanize: 0.5, kickSnare: true, cymbals: true, toms: true, percussion: false, kickSnareLevel: 5, cymbalLevel: 3, percussionLevel: 3, followTrack: 0 } };
-    if (kind === 'drummer') t.clips.push({ id: nextId++, name: 'Verso', start: 0, length: 32, midi: true, loopLength: 32, seed: 1, locked: false, fill: true, notes: drumNotes(32, 3) });
+    if (kind === 'drummer') arrange(t, 0, 64);
     tracks.push(t);
     selected = t.id;
     return t;
@@ -208,8 +220,11 @@
         case 'removeInsert': t.inserts.splice(a.index, 1); return changed();
         case 'setBypass': t.inserts[a.slot].bypass = a.bypass; return changed();
         case 'addClip': { const clip = { id: nextId++, name: t.kind === 'drummer' ? 'Sección' : 'Región MIDI', start: a.start, length: t.kind === 'drummer' ? 32 : 16, midi: true, loopLength: 16, seed: 1, fill: true, notes: t.kind === 'drummer' ? drumNotes(32, nextId) : [] }; t.clips.push(clip); return changed(clip.id); }
-        case 'setClip': if (a.start !== undefined) c.start = a.start; if (a.length !== undefined) { c.length = a.length; if (!a.loop) c.loopLength = Math.max(c.loopLength, a.length); }
-          ['name', 'gainDb', 'fill'].forEach((k) => { if (a[k] !== undefined) c[k] = a[k]; });
+        case 'setClip': if (a.start !== undefined) c.start = a.start; if (a.length !== undefined) {
+            const oldEnd = c.start + c.length; c.length = a.length; if (!a.loop) c.loopLength = Math.max(c.loopLength, a.length);
+            if (t.kind === 'drummer' && a.start === undefined) t.clips.forEach((x) => { if (x !== c && x.start >= oldEnd - 1e-6) x.start += c.start + c.length - oldEnd; });
+          }
+          ['name', 'gainDb', 'fill', 'part'].forEach((k) => { if (a[k] !== undefined) c[k] = a[k]; });
           if (a.toTrackId) { t.clips.splice(t.clips.indexOf(c), 1); track(a.toTrackId).clips.push(c); } return changed();
         case 'setTake': c.activeTake = a.take; return changed();
         case 'deleteClip': t.clips = t.clips.filter((x) => x.id !== a.clipId); return changed();
@@ -217,7 +232,9 @@
         case 'splitClip': { const r = JSON.parse(JSON.stringify(c)); r.id = nextId++; const cut = a.beat - c.start; r.start = a.beat; r.length = c.length - cut; c.length = cut; t.clips.push(r); return changed(); }
         case 'setNotes': c.notes = a.notes; return changed();
         case 'setDrummer': Object.assign(t.drummer, a.settings); t.clips.forEach((x) => { x.notes = drumNotes(x.length, Math.round(t.drummer.complexity * 100)); }); return changed();
-        case 'varyDrummer': t.clips.forEach((x) => { x.notes = drumNotes(x.length, Math.floor(Math.random() * 1000)); }); return changed();
+        case 'varyDrummer': t.clips.forEach((x) => { if (!a.clipId || x.id === a.clipId) x.notes = drumNotes(x.length, Math.floor(Math.random() * 1000)); }); return changed();
+        case 'arrangeDrummer': { const from = Math.min(...t.clips.map((x) => x.start)), to = Math.max(...t.clips.map((x) => x.start + x.length)); arrange(t, from, to - from); return changed(); }
+        case 'useRealDrums': t.instrument.name = 'Batería acústica real'; return changed();
         case 'addLoop': { const dest = t || addTrack('instrument', 'Piano de cola'); dest.clips.push({ id: nextId++, name: a.loopId, start: a.beat, length: 8, midi: true, loopLength: 8, notes: [[0, 1, 60, 0.8], [2, 1, 64, 0.8], [4, 1, 67, 0.8]] }); return changed(); }
         case 'choose': return { ok: false };
         default: return changed();

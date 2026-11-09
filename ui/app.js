@@ -430,6 +430,12 @@
     list.forEach((d) => {
       const n = $(`[data-dl="${d.id}"]`);
       if (d.phase === 3) { G.toast(`${d.name}: ${d.error || 'falló la descarga'}`, true); A.refreshLibrary().then(renderLibrary); return; }
+      if (d.phase === 2 && d.id === 'virtuosity-drums' && G.pendingRealDrums) {
+        const id = G.pendingRealDrums; G.pendingRealDrums = 0;
+        G.toast('Listo: el baterista ya toca con la batería real.');
+        G.run('useRealDrums', { trackId: id }).then(() => A.refreshLibrary());
+        return;
+      }
       if (d.phase === 2) { G.toast(`Listo: ${d.name} está instalado. Toca "Usar".`); A.refreshLibrary().then(() => { lastLibraryKey = ''; renderLibrary(); }); return; }
       if (n) n.textContent = d.phase === 1 ? 'Instalando…' : d.progress < 0 ? `Bajando… ${Math.round(-d.progress)} MB` : `Bajando… ${Math.round(d.progress / 0.9 * 100)}%`;
     });

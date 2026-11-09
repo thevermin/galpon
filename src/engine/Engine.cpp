@@ -2,6 +2,7 @@
 #include "Analysis.h"
 #include "Flex.h"
 #include "Drummer.h"
+#include <map>
 #include "Loops.h"
 
 namespace galpon
@@ -1457,15 +1458,11 @@ Track* Engine::addTrack (TrackKind kind, const juce::String& preset)
         {
             t->name = "Baterista IA";
             setInstrument (*t, "builtin", "drums", juce::String (u8"Batería acústica"));
-            Clip c;
-            c.id = song.newId();
-            c.name = "Verso";
-            c.start = 0.0;
-            c.length = song.beatsPerBar() * 8.0;
-            c.loopLength = c.length;
-            c.seed = juce::Random::getSystemRandom().nextInt (100000);
-            t->clips.push_back (c);
-            regenerateDrummer (*t);
+            // Already split into the parts of a whole song: over what's recorded, or 16 bars
+            const double bpb = song.beatsPerBar();
+            const double have = song.lengthInBeats();
+            const double bars = have > 0.0 ? juce::jmax (16.0, std::ceil (have / bpb - 1.0e-6)) : 16.0;
+            arrangeDrummer (*t, 0.0, bars * bpb);
             break;
         }
         case TrackKind::Bus:
@@ -1784,8 +1781,23 @@ void Engine::regenerateDrummer (Track& t, int onlyClipId)
         r.seed = c.seed + t.id * 13;
         r.fillAtEnd = c.fill;
 
-        // The parts of the song this region crosses, bar by bar
-        if (! song.sections.empty())
+        // This region is a part of the song (intro, chorus…): play all of it that way
+        if (c.part.isNotEmpty())
+        {
+            const int bars = juce::jmax (1, (int) std::ceil (c.length / bpb - 1.0e-6));
+            const auto kind = sectionKindFromId (c.part);
+            for (int b = 0; b < bars; ++b)
+            {
+                DrumBar db;
+                db.kind = kind;
+                db.sectionStart = b == 0;
+                db.ending = kind == SectionKind::outro && b == bars - 1;
+                r.bars.push_back (db);
+            }
+            r.crashAtStart = kind != SectionKind::intro && kind != SectionKind::verse;
+        }
+        // Otherwise the parts marked on the song, bar by bar
+        else if (! song.sections.empty())
         {
             const int bars = juce::jmax (1, (int) std::ceil (c.length / bpb - 1.0e-6));
             auto partAt = [&] (double beat) -> int
@@ -1868,6 +1880,85 @@ void Engine::regenerateDrummer (Track& t, int onlyClipId)
         }
     t.needsAllNotesOff = true;
     dirty = true;
+}
+
+std::vector<std::pair<juce::String, int>> Engine::songPlan (int bars)
+{
+    // A whole song, in the order bands usually play it, with typical lengths (bars)
+    static const std::vector<std::pair<juce::String, int>> full {
+        { "intro", 4 }, { "verse", 8 }, { "chorus", 8 }, { "verse", 8 }, { "chorus", 8 }, { "bridge", 8 }, { "chorus", 8 }, { "outro", 4 } };
+    // Fewer bars than that: keep the parts that matter most (each one gets at least 2 bars)
+    static const std::vector<std::vector<int>> subsets {
+        {}, { 1 }, { 1, 2 }, { 0, 1, 2 }, { 0, 1, 2, 7 }, { 0, 1, 2, 7 }, { 0, 1, 2, 3, 4, 7 }, { 0, 1, 2, 3, 4, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 } };
+    bars = juce::jmax (1, bars);
+    const auto& pick = subsets[(size_t) juce::jlimit (1, 8, bars / 2)];
+    std::vector<std::pair<juce::String, int>> plan;
+    double weight = 0;
+    for (int i : pick) { plan.push_back ({ full[(size_t) i].first, 0 }); weight += full[(size_t) i].second; }
+
+    // Share the bars out in proportion (largest remainder), at least one bar each
+    std::vector<double> exact;
+    int used = 0;
+    for (size_t k = 0; k < plan.size(); ++k)
+    {
+        exact.push_back (full[(size_t) pick[k]].second * bars / weight);
+        plan[k].second = juce::jmax (1, (int) std::floor (exact.back()));
+        used += plan[k].second;
+    }
+    while (used < bars)
+    {
+        size_t best = 0; double rem = -1;
+        for (size_t k = 0; k < plan.size(); ++k) if (exact[k] - plan[k].second > rem) { rem = exact[k] - plan[k].second; best = k; }
+        ++plan[best].second; ++used;
+    }
+    while (used > bars)
+    {
+        size_t best = 0; double rem = 1e9;
+        for (size_t k = 0; k < plan.size(); ++k) if (plan[k].second > 1 && exact[k] - plan[k].second < rem) { rem = exact[k] - plan[k].second; best = k; }
+        if (plan[best].second <= 1) break;
+        --plan[best].second; --used;
+    }
+    return plan;
+}
+
+void Engine::arrangeDrummer (Track& t, double start, double lengthBeats)
+{
+    const double bpb = song.beatsPerBar();
+    const int bars = juce::jmax (1, (int) std::round (lengthBeats / bpb));
+    std::map<juce::String, int> seedFor, count, total;
+    auto& rng = juce::Random::getSystemRandom();
+    const auto plan = songPlan (bars);
+    for (auto& [kind, n] : plan) ++total[kind];
+
+    std::vector<Clip> clips;
+    double at = start;
+    for (auto& [kind, n] : plan)
+    {
+        Clip c;
+        c.id = song.newId();
+        c.part = kind;
+        juce::String name = kind;
+        for (auto& [id, es] : sectionKinds()) if (id == kind) name = es;
+        if (total[kind] > 1) name << " " << ++count[kind];
+        c.name = name;
+        c.start = at;
+        c.length = n * bpb;
+        c.loopLength = c.length;
+        c.fill = kind != "outro";
+        // the same kind of part plays the same groove (until you regenerate one of them)
+        if (! seedFor.count (kind)) seedFor[kind] = rng.nextInt (100000);
+        c.seed = seedFor[kind];
+        clips.push_back (std::move (c));
+        at += n * bpb;
+    }
+    {
+        const juce::ScopedLock sl (lock);
+        t.clips.erase (std::remove_if (t.clips.begin(), t.clips.end(), [&] (const Clip& c) { return c.end() > start + 1.0e-6 && c.start < start + lengthBeats - 1.0e-6; }), t.clips.end());
+        for (auto& c : clips) t.clips.push_back (std::move (c));
+        std::sort (t.clips.begin(), t.clips.end(), [] (const Clip& a, const Clip& b) { return a.start < b.start; });
+        t.needsAllNotesOff = true;
+    }
+    regenerateDrummer (t);
 }
 
 void Engine::regenerateAllDrummers()

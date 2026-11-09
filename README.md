@@ -7,7 +7,7 @@
 - **Windows**: baja el instalador desde [Releases](../../releases), o el último build desde [Actions](../../actions).
 - **Mac**: se compila en un par de comandos (ver [Compilar](#compilar)).
 
-Versión actual: **0.8**.
+Versión actual: **0.9**.
 
 ---
 
@@ -22,7 +22,8 @@ Versión actual: **0.8**.
 - **Efectos propios**: ecualizador, compresor, puerta de ruido, distorsión, amplificador, **Amp NAM** (capturas `.nam`), gabinete IR, chorus, delay y reverb.
 - **Plugins AU y VST3**, con su propia ventana y compensación de demora.
 - **Baterista automático** con 8 estilos: sencillo/complejo, suave/fuerte, redobles y swing. Toca como una persona: mantiene un groove, lo varía al final de cada frase y hace redobles distintos. Escucha la guitarra o el bajo que grabaste: marca sus golpes con el bombo y toca más fuerte o más suave según cómo toques.
-- **Partes de la canción**: marca intro, estrofa, pre-estribillo, estribillo, puente, solo y final. El baterista toca cada parte distinto, entra con un platillo, hace un redoble antes de cada cambio y termina con un golpe final.
+- **La canción por partes**: el baterista arranca con la canción armada (intro, estrofa, estribillo, estrofa, estribillo, puente, estribillo y final), una región por parte. Cada una se alarga, se mueve o se genera de nuevo sin tocar las demás. Toca cada parte distinto, entra con un platillo, hace un redoble antes de cada cambio y termina con un golpe final.
+- **Batería acústica real**: con un clic baja una batería grabada con varios micrófonos (CC0) y el baterista la usa en lugar de la sintetizada.
 - **Loops** que siguen el tempo y el tono, **editor de notas**, **teclado en pantalla** y teclados MIDI.
 - **Automatización** de volumen, paneo, envíos y cualquier control de efecto, dibujada o grabada.
 - **Mezclador** con envíos y buses, y limitador en el master.
@@ -46,7 +47,8 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 - Lee canciones **`.feedpak`** (y `.sloppak`), el formato abierto de [feedBack](https://github.com/got-feedback/feedback). No abre ni descifra archivos de otros juegos.
 - **Dos vistas**:
   - **Tablatura (2D)**: las notas llegan de derecha a izquierda.
-  - **Mástil en 3D**: una cámara en ángulo, como en Rocksmith. Las notas vienen desde el fondo por el carril de su traste, que se ilumina, y la cámara sigue la mano con suavidad.
+  - **Mástil en 3D**: una cámara en ángulo, como en Rocksmith, con la cuerda más grave arriba. Las notas vienen desde el fondo por el carril de su traste, que se ilumina, y la cámara sigue la mano con suavidad.
+  - **Las dos a la vez**: el 3D arriba y la tablatura abajo.
 - El orden de las cuerdas se puede poner como tablatura o con la grave arriba. El tamaño se ajusta con − y +.
 - Muestra acordes, notas largas, bends, slides, ligados, palm mute, armónicos, vibrato, partes de la canción, letra y un diapasón con la posición de la mano.
 - **Te escucha y te da puntos**: reconoce las notas y acordes que tocas, si llegaste a tiempo y si mantuviste las notas largas. Lleva racha, multiplicador y precisión. Al final ves un resumen por parte y puedes practicar la parte que más te costó.
@@ -68,7 +70,7 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 | ⌘/Ctrl Z · ⇧⌘/Ctrl Z | Deshacer · Rehacer |
 | ⌘/Ctrl D · T | Duplicar · Dividir región |
 | ⌘/Ctrl S · E | Guardar · Exportar |
-| Juego: Espacio · ← → · ↑ ↓ · L · V · + − | Tocar · Saltar · Velocidad · A–B · 2D/3D · Tamaño |
+| Juego: Espacio · ← → · ↑ ↓ · L · V · + − | Tocar · Saltar · Velocidad · A–B · 2D/3D/las dos · Tamaño |
 
 ## Compilar
 

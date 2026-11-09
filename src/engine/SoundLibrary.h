@@ -30,6 +30,8 @@ public:
 
     /** Where the instrument's .sfz is once installed (empty file if it isn't). */
     juce::File installedFile (const juce::String& id) const;
+    /** The drum kit program the drummer uses (written next to the kit's own programs). */
+    static juce::File drumKitForDrummer (const juce::File& basicKitSfz);
 
     /** Starts downloading (and then unpacking) in the background. */
     juce::Result download (const juce::String& id);

@@ -118,7 +118,41 @@ juce::File SoundLibrary::installedFile (const juce::String& id) const
     auto* s = find (id);
     if (s == nullptr) return {};
     auto f = soundsFolder().getChildFile (s->id).getChildFile (s->folderInZip).getChildFile (s->sfz);
-    return f.existsAsFile() ? f : juce::File();
+    if (! f.existsAsFile()) return {};
+    if (s->id == "virtuosity-drums")
+        if (auto kit = drumKitForDrummer (f); kit.existsAsFile()) return kit;
+    return f;
+}
+
+juce::File SoundLibrary::drumKitForDrummer (const juce::File& basicKit)
+{
+    // The kit has two toms and puts a rimshot and a cross-stick on the General MIDI tom keys
+    // (45, 47). The drummer plays four toms on the GM keys, so Galpon writes its own copy of the
+    // kit's program with the toms where the drummer expects them (the samples are the same).
+    auto dir = basicKit.getParentDirectory();
+    auto kit = dir.getChildFile ("galpon-kit.sfz");
+    auto keymap = dir.getChildFile ("keymaps").getChildFile ("keymap_galpon.sfz");
+    auto basicMap = dir.getChildFile ("keymaps").getChildFile ("keymap_basic.sfz");
+    const int version = 1;
+    if (kit.existsAsFile() && keymap.existsAsFile() && kit.loadFileAsString().contains ("galpon-kit v" + juce::String (version))) return kit;
+    if (! basicMap.existsAsFile()) return {};
+
+    auto map = basicMap.loadFileAsString();
+    const std::pair<const char*, int> toms[] = {
+        { "$HTOM_CENTER_KEY", 50 }, { "$HTOM_OFFCENTER_KEY", 47 },   // high, mid
+        { "$LTOM_CENTER_KEY", 45 }, { "$LTOM_OFFCENTER_KEY", 43 },   // low, floor
+        { "$LTOM_RIMSHOT_KEY", 41 }, { "$LTOM_CROSSSTICK_KEY", 48 } };
+    juce::StringArray lines;
+    lines.addLines (map);
+    for (auto& line : lines)
+        for (auto& [name, key] : toms)
+            if (line.trim().startsWith ("#define") && line.contains (juce::String (name) + " ") ) line = "#define " + juce::String (name) + " " + juce::String (key);
+    if (! keymap.replaceWithText (lines.joinIntoString ("\n"))) return {};
+
+    auto program = basicKit.loadFileAsString().replace ("keymaps/keymap_basic.sfz", "keymaps/keymap_galpon.sfz");
+    if (! program.contains ("keymap_galpon")) return {};
+    if (! kit.replaceWithText ("// galpon-kit v" + juce::String (version) + ": the basic kit with the toms on the General MIDI keys\n" + program)) return {};
+    return kit;
 }
 
 juce::Result SoundLibrary::install (const Sound& s, const juce::File& zipFile, std::function<void (float)> progress)
