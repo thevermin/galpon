@@ -7,7 +7,7 @@
 - **Windows**: baja el instalador desde [Releases](../../releases), o el último build desde [Actions](../../actions).
 - **Mac**: se compila en un par de comandos (ver [Compilar](#compilar)).
 
-Versión actual: **0.7**.
+Versión actual: **0.8**.
 
 ---
 
@@ -21,7 +21,8 @@ Versión actual: **0.7**.
 - **Instrumentos propios**: piano, piano eléctrico, órgano, sintetizador y batería. Hay un **sampler** SFZ con instrumentos grabados que se descargan con un clic: piano de cola, batería acústica, bajo y guitarra acústica.
 - **Efectos propios**: ecualizador, compresor, puerta de ruido, distorsión, amplificador, **Amp NAM** (capturas `.nam`), gabinete IR, chorus, delay y reverb.
 - **Plugins AU y VST3**, con su propia ventana y compensación de demora.
-- **Baterista automático** con 8 estilos: sencillo/complejo, suave/fuerte, redobles, swing, y el bombo puede seguir al bajo.
+- **Baterista automático** con 8 estilos: sencillo/complejo, suave/fuerte, redobles y swing. Toca como una persona: mantiene un groove, lo varía al final de cada frase y hace redobles distintos. Escucha la guitarra o el bajo que grabaste: marca sus golpes con el bombo y toca más fuerte o más suave según cómo toques.
+- **Partes de la canción**: marca intro, estrofa, pre-estribillo, estribillo, puente, solo y final. El baterista toca cada parte distinto, entra con un platillo, hace un redoble antes de cada cambio y termina con un golpe final.
 - **Loops** que siguen el tempo y el tono, **editor de notas**, **teclado en pantalla** y teclados MIDI.
 - **Automatización** de volumen, paneo, envíos y cualquier control de efecto, dibujada o grabada.
 - **Mezclador** con envíos y buses, y limitador en el master.
@@ -45,7 +46,7 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 - Lee canciones **`.feedpak`** (y `.sloppak`), el formato abierto de [feedBack](https://github.com/got-feedback/feedback). No abre ni descifra archivos de otros juegos.
 - **Dos vistas**:
   - **Tablatura (2D)**: las notas llegan de derecha a izquierda.
-  - **Mástil en 3D**: las notas vienen desde el fondo hacia su cuerda y su traste, y la cámara sigue la mano.
+  - **Mástil en 3D**: una cámara en ángulo, como en Rocksmith. Las notas vienen desde el fondo por el carril de su traste, que se ilumina, y la cámara sigue la mano con suavidad.
 - El orden de las cuerdas se puede poner como tablatura o con la grave arriba. El tamaño se ajusta con − y +.
 - Muestra acordes, notas largas, bends, slides, ligados, palm mute, armónicos, vibrato, partes de la canción, letra y un diapasón con la posición de la mano.
 - **Te escucha y te da puntos**: reconoce las notas y acordes que tocas, si llegaste a tiempo y si mantuviste las notas largas. Lleva racha, multiplicador y precisión. Al final ves un resumen por parte y puedes practicar la parte que más te costó.

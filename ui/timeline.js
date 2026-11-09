@@ -50,6 +50,7 @@
     $('#track-count').textContent = s.tracks.length === 1 ? '1 pista' : s.tracks.length + ' pistas';
     $('#empty-hint').classList.toggle('hidden', s.tracks.length > 0);
     T.renderChords();
+    T.renderParts();
     T.drawRuler();
     T.updatePlayhead(G.tick ? G.tick.beat : 0);
   };
@@ -97,6 +98,154 @@
       strip.appendChild(chip);
     });
   };
+
+  // ------------------------------------------------------------------ parts of the song
+  // Intro, verse, chorus, bridge… marked on their own strip. The drummer plays each one its way:
+  // a groove per part, a fill into the next one, a crash when it starts, one last hit at the end.
+  const PART_COLORS = { intro: '#7c8cff', verse: '#4aa3df', prechorus: '#3fbfa0', chorus: '#e6a84a', bridge: '#c77dff', solo: '#ff6b6b', outro: '#8e8e96' };
+  const PART_ORDER = ['intro', 'verse', 'prechorus', 'chorus', 'bridge', 'solo', 'outro'];
+  T.partName = (kind) => { const k = ((G.state && G.state.sectionKinds) || []).find((x) => x[0] === kind); return k ? k[1] : kind; };
+  const partsCopy = () => ((G.state && G.state.sections) || []).map((p) => ({ beat: p.beat, length: p.length, kind: p.kind }));
+  const saveParts = (list) => G.run('setSections', { sections: list });
+
+  /** A good guess for the next part: after a verse comes a chorus, after a chorus a verse… */
+  function guessKind(list, beat) {
+    const before = list.filter((p) => p.beat < beat).sort((a, b) => a.beat - b.beat);
+    if (!before.length) return beat < T.bpb() ? 'intro' : 'verse';
+    const last = before[before.length - 1].kind;
+    const choruses = before.filter((p) => p.kind === 'chorus').length;
+    return { intro: 'verse', verse: 'chorus', prechorus: 'chorus', chorus: choruses >= 2 ? 'bridge' : 'verse', bridge: 'chorus', solo: 'chorus', outro: 'outro' }[last] || 'verse';
+  }
+
+  /** Adds a part at `beat` (whole bars), up to the next part or 8 bars. */
+  T.addPart = function (beat, kind, length) {
+    const bpb = T.bpb();
+    const list = partsCopy();
+    const at = Math.max(0, Math.floor(beat / bpb + 1e-6) * bpb);
+    const inside = list.find((p) => at >= p.beat && at < p.beat + p.length - 1e-6);
+    if (inside && Math.abs(inside.beat - at) < 1e-6) { inside.kind = kind; return saveParts(list); }
+    if (inside) inside.length = at - inside.beat;   // split the part it falls in
+    const next = list.filter((p) => p.beat > at + 1e-6).sort((a, b) => a.beat - b.beat)[0];
+    let len = length || bpb * 8;
+    if (next) len = Math.min(len, next.beat - at);
+    if (inside && !length) len = Math.max(bpb, inside.beat + (inside.length + (at - inside.beat)) - at);   // keep the rest of the split part
+    list.push({ beat: at, length: Math.max(bpb, len), kind: kind || guessKind(list, at) });
+    return saveParts(list);
+  };
+
+  function kindItems(onPick, current) {
+    return PART_ORDER.map((k) => ({ label: (k === current ? '✓ ' : '') + T.partName(k), action: () => onPick(k) }));
+  }
+
+  T.renderParts = function () {
+    const strip = $('#part-strip');
+    if (!strip || !G.state) return;
+    strip.innerHTML = '';
+    strip.style.width = $('#lanes').style.width;
+    const parts = G.state.sections || [];
+    if (!parts.length) strip.appendChild(el('span.part-empty', { text: 'Arrastra o haz clic aquí para marcar la intro, las estrofas, el estribillo, el puente y el final.' }));
+    parts.forEach((p, i) => {
+      const node = el('div.part', {
+        style: { '--pc': PART_COLORS[p.kind] || '#888', left: p.beat * G.ppb + 1 + 'px', width: Math.max(14, p.length * G.ppb - 3) + 'px' },
+        title: `${T.partName(p.kind)} — arrastra para moverla, el borde derecho para alargarla, clic para cambiarla`,
+      }, T.partName(p.kind));
+      const grip = el('div.pgrip');
+      node.appendChild(grip);
+      node.addEventListener('pointerdown', (e) => partPointerDown(e, i, node, e.target === grip));
+      strip.appendChild(node);
+    });
+  };
+
+  function partPointerDown(e, index, node, resize) {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const p = G.state.sections[index];
+    const bpb = T.bpb();
+    const x0 = e.clientX;
+    let moved = false, start = p.beat, length = p.length;
+    node.setPointerCapture(e.pointerId);
+    node.classList.add('drag');
+    const move = (ev) => {
+      const d = (ev.clientX - x0) / G.ppb;
+      if (!moved && Math.abs(ev.clientX - x0) < 4) return;
+      moved = true;
+      if (resize) {
+        length = Math.max(bpb, Math.round((p.length + d) / bpb) * bpb);
+        node.style.width = Math.max(14, length * G.ppb - 3) + 'px';
+      } else {
+        start = Math.max(0, Math.round((p.beat + d) / bpb) * bpb);
+        node.style.left = start * G.ppb + 1 + 'px';
+      }
+    };
+    const up = (ev) => {
+      node.removeEventListener('pointermove', move); node.removeEventListener('pointerup', up);
+      node.classList.remove('drag');
+      const list = partsCopy();
+      if (!moved) {
+        G.menu(ev.clientX, ev.clientY + 6, [
+          { heading: 'Esta parte es…' },
+          ...kindItems((k) => { list[index].kind = k; saveParts(list); }, p.kind),
+          '-',
+          { label: 'Ir acá', action: () => G.call('setPosition', { beat: p.beat }) },
+          { label: 'Elegir para el ciclo', action: () => G.run('setSong', { cycle: true, cycleStart: p.beat, cycleEnd: p.beat + p.length }) },
+          { label: 'Borrar esta parte', danger: true, action: () => { list.splice(index, 1); saveParts(list); } },
+        ]);
+        return;
+      }
+      const me = list[index];
+      me.beat = start; me.length = length;
+      list.sort((a, b) => a.beat - b.beat);
+      const i = list.indexOf(me), next = list[i + 1], prev = list[i - 1];
+      // stretching or moving over a neighbour shortens it instead of overlapping
+      if (next && next.beat < me.beat + me.length) { const nextEnd = next.beat + next.length; next.beat = me.beat + me.length; next.length = nextEnd - next.beat; }
+      if (prev && prev.beat + prev.length > me.beat) prev.length = me.beat - prev.beat;
+      saveParts(list.filter((x) => x.length >= bpb - 1e-6));
+    };
+    node.addEventListener('pointermove', move); node.addEventListener('pointerup', up);
+  }
+
+  function setupParts() {
+    const area = $('#part-scroll');
+    area.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target.closest('.part')) return;
+      const bpb = T.bpb();
+      const beatAt = (ev) => Math.max(0, (ev.clientX - area.getBoundingClientRect().left + $('#tracks-scroll').scrollLeft) / G.ppb);
+      const a = Math.floor(beatAt(e) / bpb) * bpb;
+      let b = a + bpb, moved = false;
+      const ghost = el('div.part-ghost', { style: { left: a * G.ppb + 'px', width: bpb * G.ppb + 'px' } });
+      $('#part-strip').appendChild(ghost);
+      area.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        const x = beatAt(ev);
+        if (Math.abs(x - beatAt(e)) * G.ppb > 4) moved = true;
+        b = Math.max(a + bpb, Math.ceil(x / bpb) * bpb);
+        ghost.style.width = (b - a) * G.ppb + 'px';
+      };
+      const up = (ev) => {
+        area.removeEventListener('pointermove', move); area.removeEventListener('pointerup', up);
+        G.menu(ev.clientX, ev.clientY + 6, [
+          { heading: moved ? `Marcar ${Math.round((b - a) / bpb)} compases como…` : 'Marcar una parte desde acá' },
+          ...kindItems((k) => T.addPart(a, k, moved ? b - a : 0), guessKind(partsCopy(), a)).map((it, i) =>
+            PART_ORDER[i] === guessKind(partsCopy(), a) ? Object.assign(it, { label: it.label.replace('✓ ', '') + '  (sugerido)' }) : it),
+        ]);
+        // the ghost stays until the menu closes
+        const clear = () => { if (!document.querySelector('.menu')) { ghost.remove(); } else setTimeout(clear, 150); };
+        setTimeout(clear, 150);
+      };
+      area.addEventListener('pointermove', move); area.addEventListener('pointerup', up);
+    });
+    $('#btn-parts').addEventListener('click', (e) => {
+      const r = e.target.getBoundingClientRect();
+      const beat = G.tick ? G.tick.beat : 0;
+      const has = (G.state.sections || []).length > 0;
+      G.menu(r.left, r.bottom + 4, [
+        { heading: 'Marcar en el cursor (compás ' + (Math.floor(beat / T.bpb()) + 1) + ') como…' },
+        ...kindItems((k) => T.addPart(beat, k)),
+        '-',
+        { label: 'Borrar todas las partes', danger: true, disabled: !has, action: () => saveParts([]) },
+      ]);
+    });
+  }
 
   T.separateStems = function (t, c) {
     const minutes = c.length * 60 / G.state.song.bpm / 60;
@@ -520,11 +669,12 @@
     T.select(t.id, c.id);
     const mode = e.target.classList.contains('grip') ? 'resize' : e.target.classList.contains('loopgrip') ? 'loop' : 'move';
     const x0 = e.clientX, y0 = e.clientY;
+    const scroll = $('#tracks-scroll'), scroll0 = scroll.scrollLeft;
     let moved = false, newStart = c.start, newLength = c.length, targetTrack = t.id;
     node.setPointerCapture(e.pointerId);
 
-    const onMove = (ev) => {
-      const dx = (ev.clientX - x0) / G.ppb;
+    const apply = (ev) => {
+      const dx = (ev.clientX - x0 + scroll.scrollLeft - scroll0) / G.ppb;   // the timeline may scroll while dragging
       if (!moved && Math.abs(ev.clientX - x0) < 3 && Math.abs(ev.clientY - y0) < 3) return;
       moved = true;
       if (mode === 'move') {
@@ -541,7 +691,10 @@
         node.style.width = newLength * G.ppb + 'px';
       }
     };
+    const edges = edgeScroller(scroll, apply);
+    const onMove = (ev) => edges.move(ev);
     const onUp = () => {
+      edges.stop();
       node.removeEventListener('pointermove', onMove);
       node.removeEventListener('pointerup', onUp);
       G.$$('.lane').forEach((l) => l.classList.remove('drop'));
@@ -553,6 +706,14 @@
     };
     node.addEventListener('pointermove', onMove);
     node.addEventListener('pointerup', onUp);
+  }
+
+  /** Where the music ends (the last region of the other tracks), rounded up to a whole bar. */
+  function songEnd(exceptTrack) {
+    let end = 0;
+    for (const t of G.state.tracks) if (t.id !== exceptTrack) for (const c of t.clips) end = Math.max(end, c.start + c.length);
+    const bpb = T.bpb();
+    return Math.ceil(end / bpb - 1e-6) * bpb;
   }
 
   function clipMenu(e, t, c) {
@@ -572,6 +733,8 @@
     if (t.kind === 'drummer') {
       items.push('-',
         { label: 'Variar este ritmo', action: () => G.run('varyDrummer', { trackId: t.id, clipId: c.id, unlock: true }) },
+        { label: 'Alargar hasta el final de la canción', disabled: songEnd(t.id) <= c.start + c.length + 1e-6,
+          action: () => G.run('setClip', { trackId: t.id, clipId: c.id, length: songEnd(t.id) - c.start }) },
         { label: c.fill ? 'Sin redoble al final' : 'Con redoble al final', action: () => G.run('setClip', { trackId: t.id, clipId: c.id, fill: !c.fill }) },
         { label: 'Editar las notas a mano', action: () => { T.select(t.id, c.id); G.App.showBottom('editor'); } });
     }
@@ -623,6 +786,8 @@
     const barPx = bpb * G.ppb;
     const strip = $('#chord-strip');
     if (strip) strip.style.transform = `translateX(${-off}px)`;
+    const parts = $('#part-strip');
+    if (parts) parts.style.transform = `translateX(${-off}px)`;
 
     if (s.song.cycle || T.dragCycle) {
       const a = s.song.cycleStart * G.ppb - off, b = s.song.cycleEnd * G.ppb - off;
@@ -657,6 +822,8 @@
     $('#tracks-inner').style.width = (need + 240) + 'px';
     const strip = $('#chord-strip');
     if (strip) strip.style.width = lanes.style.width;
+    const parts = $('#part-strip');
+    if (parts) parts.style.width = lanes.style.width;
   };
 
   /** While dragging on the ruler, holding the pointer near an edge scrolls the timeline that way
@@ -835,6 +1002,7 @@
   T.init = function () {
     setupRuler();
     $('#btn-chords').addEventListener('click', (e) => T.chordsMenu(e));
+    setupParts();
     const scroll = $('#tracks-scroll');
     scroll.addEventListener('scroll', () => T.drawRuler());
     $('#zoom').addEventListener('input', (e) => T.setZoom(+e.target.value));

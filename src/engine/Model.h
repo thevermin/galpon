@@ -195,6 +195,13 @@ struct ChordSpan
     int    quality = 0;     // 0 major, 1 minor, 2 dominant 7, 3 minor 7
 };
 
+/** A part of the song marked on the "Partes" strip (intro, verse, chorus…). */
+struct SongSection
+{
+    double beat = 0.0, length = 16.0;
+    juce::String kind = "verse";   // intro, verse, prechorus, chorus, bridge, solo, outro
+};
+
 //==============================================================================
 struct DrummerSettings
 {
@@ -211,7 +218,7 @@ struct DrummerSettings
     int   kickSnareLevel = 5;  // 1..8
     int   cymbalLevel    = 3;
     int   percussionLevel = 3;
-    int   followTrack    = 0;  // track id whose notes the kick follows, 0 = none
+    int   followTrack    = -1; // track the drummer listens to: its id, 0 = nobody, -1 = automatic (the recorded guitar or bass)
 };
 
 //==============================================================================
@@ -281,6 +288,7 @@ struct Song
     std::vector<std::unique_ptr<Track>> tracks;
     std::vector<Slot> masterInserts;
     std::vector<ChordSpan> chords;
+    std::vector<SongSection> sections;
     int nextId = 1;
 
     int newId() noexcept { return nextId++; }
@@ -305,6 +313,8 @@ void      drummerFromVar (DrummerSettings&, const juce::var&);
 
 juce::var chordsToVar (const std::vector<ChordSpan>&);
 std::vector<ChordSpan> chordsFromVar (const juce::var&);
+juce::var sectionsToVar (const std::vector<SongSection>&);
+std::vector<SongSection> sectionsFromVar (const juce::var&);
 juce::var automationToVar (const std::vector<AutomationLane>&);
 std::vector<AutomationLane> automationFromVar (const juce::var&);
 juce::var sendsToVar (const std::vector<Send>&);

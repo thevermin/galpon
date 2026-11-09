@@ -1127,131 +1127,186 @@
   }
 
   // ------------------------------------------------------------------ 3D: the neck in perspective (like Rocksmith)
-  /** The camera looks down the neck: frets go left to right, time goes into the distance,
-      and each note flies towards its string at its fret. It follows where your hand is. */
-  const cam = { x: 3, span: 8 };
+  /** A real camera, a little above and to the left of the neck, looking along it: frets go
+      across, time goes into the distance, and each note flies down its fret's lane at its
+      string's height. The notes carry no numbers: the lane lights up under them and the fret
+      number is on the neck. The camera drifts slowly to where the hand goes. */
+  const cam = { x: 4, span: 8, t: 0 };
   function drawHighway3D(now) {
     const { ctx, w, h } = fit(hw);
     const p = play, n = p.strings, s = opts.size;
-    const ahead = 3.2 / opts.zoom;                    // seconds visible into the distance
-    const d = 0.75;                                    // camera distance (in seconds of song)
-    const horizon = h * 0.06, nearY = h - 26;
-    const laneH = Math.min(30 * s, (nearY - horizon) * 0.5 / n);
-    const stackH = n * laneH;
 
-    // where the hand is: the camera glides there
-    let anchor = null;
-    for (const a of p.anchors) { if (a.time <= now + 0.6) anchor = a; else break; }
+    // ---- where the hand goes: look a little ahead and glide there (time-based, not per frame)
+    const wall = performance.now() / 1000;
+    const dt = cam.t ? Math.min(0.1, Math.max(0, wall - cam.t)) : 0;
+    cam.t = wall;
+    let anchor = null, nextAnchor = null;
+    for (const a of p.anchors) { if (a.time <= now + 0.15) anchor = a; else { nextAnchor = a; break; } }
     const aFret = anchor ? anchor.fret : 1, aWidth = anchor ? (anchor.width || 4) : 4;
-    const targetX = Math.max(aFret - 1 + aWidth / 2, 3.5);
-    const targetSpan = Math.max(aWidth + 5, 8);
-    cam.x += (targetX - cam.x) * 0.06;
-    cam.span += (targetSpan - cam.span) * 0.06;
-    const fretW = (w * 0.94) / cam.span;
-    const cx = w / 2;
-    const k = (z) => d / (Math.max(-0.2, z) + d);
-    const floorY = (z) => horizon + (nearY - horizon) * k(z);
-    const sx = (X, z) => cx + (X - cam.x) * fretW * k(z);
-    const row = (str) => rowOf(str, n);                // 0 = top row
-    const hOf = (str) => (n - row(str)) * laneH - laneH * 0.35;   // height of a string above the floor
-    const sy = (str, z) => floorY(z) - hOf(str) * k(z);
+    // start drifting towards the next position a second before it comes
+    let goal = anchor || { fret: 1, width: 4 };
+    if (nextAnchor && nextAnchor.time - now < 1.0) goal = nextAnchor;
+    const targetX = Math.max(goal.fret - 1 + (goal.width || 4) / 2 + 0.6, 4);
+    const targetSpan = Math.max((goal.width || 4) + 4, 7.5);
+    if (!dt || Math.abs(targetX - cam.x) > 14) { cam.x = targetX; cam.span = targetSpan; }   // first frame or a jump in the song
+    else {
+      const ease = 1 - Math.exp(-dt / 0.9);              // ~1 s to settle
+      cam.x += Math.max(-dt * 5, Math.min(dt * 5, (targetX - cam.x) * ease));   // never faster than 5 frets a second
+      cam.span += (targetSpan - cam.span) * (1 - Math.exp(-dt / 1.4));
+    }
 
-    // sky and floor
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, '#0d0d10'); grad.addColorStop(1, '#1b1813');
-    ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
-    const zFar = ahead;
-    const quad = (x0, x1, z0, z1, fill) => {
-      ctx.beginPath();
-      ctx.moveTo(sx(x0, z0), floorY(z0)); ctx.lineTo(sx(x1, z0), floorY(z0));
-      ctx.lineTo(sx(x1, z1), floorY(z1)); ctx.lineTo(sx(x0, z1), floorY(z1)); ctx.closePath();
-      ctx.fillStyle = fill; ctx.fill();
+    // ---- the camera
+    const span = cam.span;
+    const ahead = 3.2 / opts.zoom;                       // seconds visible into the distance
+    const depth = (span * 1.7) / ahead;                  // world units per second
+    const strGap = Math.min(0.42, 2.1 / n) * Math.min(1.25, Math.max(0.8, s));
+    const hOf = (str) => (n - rowOf(str, n)) * strGap;  // height above the floor (top row highest)
+    const C = { x: cam.x - span * 0.22, y: span * 0.5, z: -span * 1.0 };   // above, behind and a bit to the left
+    const T = { x: cam.x + span * 0.08, y: 0, z: span * 1.0 };
+    let F = { x: T.x - C.x, y: T.y - C.y, z: T.z - C.z };
+    const fl = Math.hypot(F.x, F.y, F.z); F = { x: F.x / fl, y: F.y / fl, z: F.z / fl };
+    let R = { x: F.z, y: 0, z: -F.x };
+    const rl = Math.hypot(R.x, R.z); R = { x: R.x / rl, y: 0, z: R.z / rl };
+    const U = { x: F.y * R.z - F.z * R.y, y: F.z * R.x - F.x * R.z, z: F.x * R.y - F.y * R.x };
+    const focal = Math.min(w * 0.95, h * 1.9) * Math.min(1.2, Math.max(0.85, s));
+    const ox = w * 0.5, oy = h * 0.3;
+    /** world (fret X, height Y, seconds ahead) -> screen [x, y, scale] */
+    const P = (X, Y, sec) => {
+      const dx = X - C.x, dy = Y - C.y, dz = Math.max(-0.3, sec) * depth - C.z;
+      const cz = Math.max(0.2, dx * F.x + dy * F.y + dz * F.z);
+      const cx = dx * R.x + dy * R.y + dz * R.z, cy = dx * U.x + dy * U.y + dz * U.z;
+      return [ox + focal * cx / cz, oy - focal * cy / cz, focal / cz];
     };
-    const fMin = Math.max(0, Math.floor(cam.x - cam.span)), fMax = Math.min(24, Math.ceil(cam.x + cam.span));
-    quad(fMin, fMax, 0, zFar, '#211c16');
-    // the hand zone, all the way back
-    quad(aFret - 1, aFret - 1 + aWidth, 0, zFar, 'rgba(230,168,74,0.13)');
-    // loop region on the floor
+    const poly = (pts, fill, stroke, lw) => {
+      ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.closePath();
+      if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); }
+    };
+    const floorQuad = (x0, x1, z0, z1, fill) => poly([P(x0, 0, z0), P(x1, 0, z0), P(x1, 0, z1), P(x0, 0, z1)], fill);
+    const zFar = ahead;
+    const fMin = Math.max(0, Math.floor(cam.x - span * 0.75)), fMax = Math.min(24, Math.ceil(cam.x + span * 0.85));
+
+    // ---- background, floor, the hand's zone
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, '#0b0b0e'); grad.addColorStop(0.55, '#141215'); grad.addColorStop(1, '#1e1913');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+    floorQuad(fMin, fMax, -0.15, zFar, '#1f1a15');
+    floorQuad(aFret - 1, aFret - 1 + aWidth, -0.15, zFar, 'rgba(230,168,74,0.10)');
     if (p.loop) {
       const z0 = Math.max(0, p.loop.a - now), z1 = Math.min(zFar, p.loop.b - now);
-      if (z1 > z0) quad(fMin, fMax, z0, z1, 'rgba(230,168,74,0.06)');
+      if (z1 > z0) floorQuad(fMin, fMax, z0, z1, 'rgba(230,168,74,0.05)');
     }
-    // beats across the floor
+    // beats across the floor (bars brighter)
     for (let i = lowerBound(p.beats, now, 'time'); i < p.beats.length && p.beats[i].time <= now + zFar; i++) {
-      const b = p.beats[i], z = b.time - now;
-      ctx.strokeStyle = b.measure >= 0 ? 'rgba(255,255,255,' + (0.28 * k(z) + 0.05) + ')' : 'rgba(255,255,255,' + (0.1 * k(z)) + ')';
-      ctx.lineWidth = b.measure >= 0 ? 2 * k(z) + 0.5 : 1;
-      ctx.beginPath(); ctx.moveTo(sx(fMin, z), floorY(z)); ctx.lineTo(sx(fMax, z), floorY(z)); ctx.stroke();
+      const b = p.beats[i], z = b.time - now, a = P(fMin, 0, z), c = P(fMax, 0, z);
+      const fade = Math.min(1, (zFar - z) / (zFar * 0.3));
+      ctx.strokeStyle = b.measure >= 0 ? `rgba(255,255,255,${0.22 * fade})` : `rgba(255,255,255,${0.07 * fade})`;
+      ctx.lineWidth = b.measure >= 0 ? Math.max(1, a[2] * 0.03) : 1;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(c[0], c[1]); ctx.stroke();
     }
-    // fret wires running into the distance, and their numbers
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    // fret lanes into the distance
     for (let f = fMin; f <= fMax; f++) {
       const inZone = f >= aFret - 1 && f <= aFret - 1 + aWidth;
-      ctx.strokeStyle = inZone ? 'rgba(243,199,126,0.55)' : 'rgba(200,190,175,0.25)'; ctx.lineWidth = f === 0 ? 3 : 1.5;
-      ctx.beginPath(); ctx.moveTo(sx(f, 0), floorY(0)); ctx.lineTo(sx(f, zFar), floorY(zFar)); ctx.stroke();
-      if (f > 0) {
-        ctx.font = '700 ' + Math.round(13 * Math.min(1.3, s)) + 'px Inter, system-ui, sans-serif';
-        ctx.fillStyle = inZone ? '#f3c77e' : '#8c8478';
-        ctx.fillText(String(f), sx(f - 0.5, 0), nearY + 13);
-      }
+      const a = P(f, 0, -0.15), b = P(f, 0, zFar);
+      const lg = ctx.createLinearGradient(a[0], a[1], b[0], b[1]);
+      lg.addColorStop(0, inZone ? 'rgba(243,199,126,0.5)' : 'rgba(200,190,175,0.22)'); lg.addColorStop(1, 'rgba(200,190,175,0)');
+      ctx.strokeStyle = lg; ctx.lineWidth = f === 0 ? 3 : 1.4;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
-    for (const f of [3, 5, 7, 9, 12, 15, 17, 19, 21, 24]) {
-      if (f < fMin + 1 || f > fMax) continue;
-      ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      ctx.beginPath(); ctx.ellipse(sx(f - 0.5, 0.05), floorY(0.05), 5, 2.5, 0, 0, 7); ctx.fill();
-    }
-    // section names floating at their start
-    ctx.font = '700 12px Inter, system-ui, sans-serif';
+    // section names on the floor, at their start
+    ctx.textBaseline = 'middle';
     for (const sec of p.sections) {
       const z = sec.time - now;
       if (z < 0 || z > zFar) continue;
-      ctx.globalAlpha = Math.min(1, k(z) * 1.6);
+      const q = P(fMin + 0.2, 0, z);
+      ctx.globalAlpha = Math.min(1, (zFar - z) / (zFar * 0.3));
       ctx.fillStyle = '#e6a84a'; ctx.textAlign = 'left';
-      ctx.fillText(sectionName(sec), sx(fMin, z) + 8, floorY(z) - 10);
-      ctx.globalAlpha = 1; ctx.textAlign = 'center';
-    }
-
-    // the strings: where the notes land
-    for (let str = 0; str < n; str++) {
-      const y = sy(str, 0), th = 1.5 + (n - 1 - str) * 0.35;
-      ctx.fillStyle = colour(str); ctx.globalAlpha = 0.9;
-      ctx.fillRect(0, y - th / 2, w, th);
+      ctx.font = '700 ' + Math.max(10, Math.round(q[2] * 0.16)) + 'px Inter, system-ui, sans-serif';
+      ctx.fillText(sectionName(sec), q[0], q[1] - 10);
       ctx.globalAlpha = 1;
     }
-    ctx.font = '700 12px Inter, system-ui, sans-serif';
-    for (let str = 0; str < n; str++) { ctx.fillStyle = colour(str); ctx.fillText(LETTER[p.pitches[str] % 12], 12, sy(str, 0) - 8); }
 
-    // notes, far to near
+    // ---- notes on their way: collect, light their lane, then draw far to near
     const i0 = lowerBound(p.items, now - 12, 't');
-    let i1 = lowerBound(p.items, now + zFar, 't');
+    const i1 = lowerBound(p.items, now + zFar, 't');
     const list = [];
     for (let i = i0; i < i1; i++) { const it = p.items[i]; if (it.t + (it.sus || 0) >= now - 0.25) list.push(i); }
     list.sort((a, b) => p.items[b].t - p.items[a].t);
-    const gemBase = Math.min(fretW * 0.62, laneH * 1.25);
+    const soon = new Map();   // fret -> how soon (s) a note arrives on it: lights the lane and the number
+    for (const i of list) {
+      const nt = p.items[i], z = nt.t - now;
+      if ((nt.f | 0) > 0 && z >= -0.05 && z < 1.6) soon.set(nt.f | 0, Math.min(soon.get(nt.f | 0) ?? 9, Math.max(0, z)));
+      if ((nt.f | 0) > 0 && z > 0 && z < zFar) {
+        const f = nt.f | 0, fade = Math.min(1, (zFar - z) / (zFar * 0.3));
+        ctx.globalAlpha = 0.18 * fade;
+        floorQuad(f - 1, f, Math.max(0, z - 0.12), z + 0.12, colour(nt.s | 0));
+        ctx.globalAlpha = 1;
+      }
+    }
+    for (const [f, z] of soon) {
+      ctx.globalAlpha = 0.28 * (1 - z / 1.6);
+      floorQuad(f - 1, f, -0.15, Math.min(zFar, z + 0.1), '#f3c77e');
+      ctx.globalAlpha = 1;
+    }
 
-    // chord frames first (behind)
+    // ---- the neck where the notes land: strings across, fret wires, dots, numbers
+    const nut = P(fMin, 0, 0), end = P(fMax, 0, 0);
+    poly([P(fMin, -0.02, 0), P(fMax, -0.02, 0), P(fMax, hOf(rowOf(0, n) === 0 ? 0 : n - 1) + strGap * 0.6, 0), P(fMin, hOf(rowOf(0, n) === 0 ? 0 : n - 1) + strGap * 0.6, 0)], 'rgba(40,32,24,0.55)');
+    void nut; void end;
+    for (let f = fMin; f <= fMax; f++) {
+      const a = P(f, 0, 0), b = P(f, n * strGap + strGap * 0.4, 0);
+      ctx.strokeStyle = f === 0 ? '#d8d2c8' : 'rgba(190,182,170,0.55)'; ctx.lineWidth = f === 0 ? 4 : 1.6;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    }
+    for (const f of [3, 5, 7, 9, 12, 15, 17, 19, 21, 24]) {
+      if (f <= fMin || f > fMax) continue;
+      const q = P(f - 0.5, strGap * 0.15, 0);
+      ctx.fillStyle = 'rgba(255,255,255,0.16)';
+      ctx.beginPath(); ctx.ellipse(q[0], q[1], Math.max(2, q[2] * 0.06), Math.max(1.5, q[2] * 0.03), 0, 0, 7); ctx.fill();
+    }
+    for (let str = 0; str < n; str++) {
+      const a = P(fMin - 0.3, hOf(str), 0), b = P(fMax + 0.3, hOf(str), 0);
+      ctx.strokeStyle = colour(str); ctx.globalAlpha = 0.95;
+      ctx.lineWidth = Math.max(1.4, (1.2 + (n - 1 - str) * 0.3) * Math.min(1.6, a[2] * 0.012));
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign = 'center';
+    for (let f = Math.max(1, fMin + 1); f <= fMax; f++) {
+      const q = P(f - 0.5, -0.05, -0.12);
+      const inZone = f >= aFret && f <= aFret - 1 + aWidth;
+      const lit = soon.has(f);
+      const size = Math.round(Math.max(11, Math.min(22, q[2] * 0.2)) * (lit ? 1.25 : 1));
+      ctx.font = '700 ' + size + 'px "Space Grotesk", Inter, sans-serif';
+      ctx.fillStyle = lit ? '#ffe2a8' : inZone ? '#e6a84a' : '#6f685e';
+      ctx.fillText(String(f), q[0], q[1] + size * 0.7);
+    }
+    // string names at the left of the neck
+    ctx.font = '700 12px Inter, system-ui, sans-serif'; ctx.textAlign = 'right';
+    for (let str = 0; str < n; str++) { const q = P(fMin - 0.35, hOf(str), 0); ctx.fillStyle = colour(str); ctx.fillText(LETTER[p.pitches[str] % 12], q[0] - 4, q[1]); }
+    ctx.textAlign = 'center';
+
+    // ---- chord frames (behind their notes)
+    const gemSize = (q) => Math.max(5, Math.min(q[2] * 0.7, q[2] * strGap * 1.45));
     for (let ci = lowerBound(p.chords, now - 0.1, 't'); ci < p.chords.length && p.chords[ci].t <= now + zFar; ci++) {
-      const c = p.chords[ci], z = c.t - now;
+      const c = p.chords[ci], z = Math.max(0, c.t - now);
       let xs = Infinity, xe = -Infinity;
       for (const nt of c.notes || []) { const X = (nt.f | 0) === 0 ? aFret - 1 + aWidth / 2 : (nt.f | 0) - 0.5; xs = Math.min(xs, X); xe = Math.max(xe, X); }
       if (!isFinite(xs)) continue;
-      const kk = k(z), pad = 0.55;
-      const x0 = sx(xs - pad, z), x1 = sx(xe + pad, z), yTop = sy(row(0) === 0 ? 0 : n - 1, z) - 18 * kk, yBot = floorY(z);
-      const topY = Math.min(sy(0, z), sy(n - 1, z)) - gemBase * kk * 0.6;
-      ctx.globalAlpha = Math.min(1, kk * 1.5);
-      ctx.strokeStyle = 'rgba(243,199,126,0.75)'; ctx.lineWidth = 2;
-      roundRect(ctx, x0, topY, x1 - x0, yBot - topY, 6); ctx.stroke();
-      ctx.fillStyle = 'rgba(230,168,74,0.06)'; ctx.fill();
-      const name = p.chordName(c.id);
-      const prev = p.chords[ci - 1];
+      const top = n * strGap + strGap * 0.5;
+      const fade = Math.min(1, (zFar - z) / (zFar * 0.3));
+      ctx.globalAlpha = fade;
+      poly([P(xs - 0.55, 0, z), P(xe + 0.55, 0, z), P(xe + 0.55, top, z), P(xs - 0.55, top, z)], 'rgba(230,168,74,0.07)', 'rgba(243,199,126,0.7)', 2);
+      const name = p.chordName(c.id), prev = p.chords[ci - 1];
       if (name && !(prev && prev.id === c.id && c.t - prev.t < 2.5)) {
-        ctx.fillStyle = '#f3c77e'; ctx.font = '700 ' + Math.max(10, Math.round(18 * kk * s)) + 'px "Space Grotesk", Inter, sans-serif';
-        ctx.fillText(name, (x0 + x1) / 2, topY - 10 * kk - 4);
+        const q = P((xs + xe) / 2, top, z);
+        ctx.fillStyle = '#f3c77e'; ctx.font = '700 ' + Math.max(10, Math.round(q[2] * 0.2)) + 'px "Space Grotesk", Inter, sans-serif';
+        ctx.fillText(name, q[0], q[1] - 10);
       }
       ctx.globalAlpha = 1;
-      void yTop;
     }
 
+    // ---- the notes, far to near
     for (const i of list) {
       const nt = p.items[i], str = nt.s | 0;
       if (str < 0 || str >= n) continue;
@@ -1262,78 +1317,79 @@
       const mk = p.marks.get(i);
       const open = (nt.f | 0) === 0;
       const X = open ? aFret - 1 + aWidth / 2 : (nt.f | 0) - 0.5;
-      const kk = k(z);
-      const x = sx(X, z), y = sy(str, z);
-      // sustain: a ribbon from the note back into the distance
+      const Y = hOf(str);
+      const fade = Math.min(1, (zFar - z) / (zFar * 0.25));
+      // sustain: a ribbon along the lane at the string's height
       if (sus >= 0.08) {
         const zs = Math.max(0, nt.t - now), ze = Math.min(zFar, nt.t + sus - now);
         if (ze > zs) {
-          const half = open ? aWidth / 2 - 0.15 : 0.18;
-          ctx.globalAlpha = mk && !mk.hit ? 0.25 : holding ? 0.9 : 0.55;
-          ctx.fillStyle = c;
-          ctx.beginPath();
-          ctx.moveTo(sx(X - half, zs), sy(str, zs)); ctx.lineTo(sx(X + half, zs), sy(str, zs));
-          ctx.lineTo(sx(X + half, ze), sy(str, ze)); ctx.lineTo(sx(X - half, ze), sy(str, ze)); ctx.closePath(); ctx.fill();
+          const half = open ? aWidth / 2 - 0.15 : 0.2;
+          ctx.globalAlpha = (mk && !mk.hit ? 0.25 : holding ? 0.9 : 0.55) * fade;
+          poly([P(X - half, Y, zs), P(X + half, Y, zs), P(X + half, Y, ze), P(X - half, Y, ze)], c);
           ctx.globalAlpha = 1;
         }
       }
+      const q = P(X, Y, z);
       if (passed) {
-        if (!mk) continue;
+        if (!mk || !mk.hit) continue;
         const age = (performance.now() - mk.at) / 1000;
-        if (age > 0.5 || !mk.hit) continue;
-        // a burst on the string where you hit it
+        if (age > 0.5) continue;
+        const q0 = P(X, Y, 0);
         ctx.globalAlpha = 1 - age / 0.5;
         ctx.strokeStyle = c; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(sx(X, 0), sy(str, 0), gemBase * (0.6 + age), 0, 7); ctx.stroke();
+        ctx.beginPath(); ctx.arc(q0[0], q0[1], gemSize(q0) * (0.6 + age), 0, 7); ctx.stroke();
         ctx.globalAlpha = 1;
         continue;
       }
-      const g = gemBase * kk;
-      ctx.globalAlpha = Math.min(1, 0.25 + kk * 1.2) * (mk && !mk.hit ? 0.45 : 1);
-      // stem to the floor and shadow: makes height (the string) readable at a distance
-      ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, 2 * kk);
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, floorY(z)); ctx.stroke();
+      const g = gemSize(q);
+      ctx.globalAlpha = fade * (mk && !mk.hit ? 0.45 : 1);
+      // stem down to the floor and a shadow: the height (string) reads even far away
+      const fq = P(X, 0, z);
+      ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, g * 0.08);
+      ctx.beginPath(); ctx.moveTo(q[0], q[1]); ctx.lineTo(fq[0], fq[1]); ctx.stroke();
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.beginPath(); ctx.ellipse(x, floorY(z), (open ? (aWidth / 2) * fretW * kk : g * 0.55), 3 * kk + 1, 0, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(fq[0], fq[1], open ? Math.abs(P(aFret - 1 + aWidth, 0, z)[0] - P(aFret - 1, 0, z)[0]) / 2 : g * 0.55, g * 0.14 + 1, 0, 0, 7); ctx.fill();
       if (open) {
-        // open string: a bar across the hand zone
-        const x0 = sx(aFret - 1 + 0.1, z), x1 = sx(aFret - 1 + aWidth - 0.1, z);
-        ctx.fillStyle = mk && mk.hit ? c : '#1d1d21'; ctx.strokeStyle = c; ctx.lineWidth = Math.max(1.5, 3 * kk);
-        roundRect(ctx, x0, y - g * 0.28, x1 - x0, g * 0.56, g * 0.28); ctx.fill(); ctx.stroke();
+        // open string: a bar across the hand's zone
+        const a = P(aFret - 1 + 0.1, Y, z), b = P(aFret - 1 + aWidth - 0.1, Y, z);
+        ctx.fillStyle = mk && mk.hit ? c : 'rgba(29,29,33,0.9)'; ctx.strokeStyle = c; ctx.lineWidth = Math.max(1.5, g * 0.12);
+        ctx.beginPath(); ctx.moveTo(a[0], a[1] - g * 0.22); ctx.lineTo(b[0], b[1] - g * 0.22); ctx.lineTo(b[0], b[1] + g * 0.22); ctx.lineTo(a[0], a[1] + g * 0.22); ctx.closePath();
+        ctx.fill(); ctx.stroke();
       } else {
         if (mk && mk.hit) { ctx.shadowColor = c; ctx.shadowBlur = 16; }
-        ctx.fillStyle = mk ? (mk.hit ? c : '#2a1d1d') : '#1d1d21'; ctx.strokeStyle = mk && !mk.hit ? '#f87171' : c; ctx.lineWidth = Math.max(1.5, 3.5 * kk);
-        roundRect(ctx, x - g / 2, y - g / 2, g, g, g * 0.28); ctx.fill(); ctx.stroke();
+        // a gem in the string's colour, lighter on top like it has volume
+        const gg = ctx.createLinearGradient(q[0], q[1] - g / 2, q[0], q[1] + g / 2);
+        gg.addColorStop(0, mk && !mk.hit ? '#3a2323' : c); gg.addColorStop(1, mk && !mk.hit ? '#2a1d1d' : 'rgba(20,20,24,0.95)');
+        ctx.fillStyle = mk && mk.hit ? c : gg; ctx.strokeStyle = mk && !mk.hit ? '#f87171' : c; ctx.lineWidth = Math.max(1.5, g * 0.1);
+        roundRect(ctx, q[0] - g / 2, q[1] - g * 0.42, g, g * 0.84, g * 0.25); ctx.fill(); ctx.stroke();
         ctx.shadowBlur = 0;
-        if (g > 10) {
-          ctx.fillStyle = mk && mk.hit ? '#111' : '#f2f2f3';
-          ctx.font = '700 ' + Math.round(g * 0.52) + 'px "Space Grotesk", Inter, sans-serif';
-          ctx.fillText(nt.mt ? '✕' : String(nt.f | 0), x, y + 1);
-        }
+        if (nt.mt && g > 10) { ctx.fillStyle = '#f2f2f3'; ctx.font = '700 ' + Math.round(g * 0.5) + 'px Inter, sans-serif'; ctx.fillText('✕', q[0], q[1] + 1); }
       }
       if (holding) {
-        const done = (now - nt.t) / sus;
+        const done = (now - nt.t) / sus, q0 = P(X, Y, 0);
         ctx.strokeStyle = c; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.arc(x, y, gemBase * 0.75, -Math.PI / 2, -Math.PI / 2 + done * Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(q0[0], q0[1], gemSize(q0) * 0.75, -Math.PI / 2, -Math.PI / 2 + done * Math.PI * 2); ctx.stroke();
       }
       const tag = techTag(nt);
-      if (tag && g > 14) {
+      if (tag && g > 16) {
         ctx.font = '700 ' + Math.max(9, Math.round(g * 0.3)) + 'px Inter, system-ui, sans-serif';
         const tw = ctx.measureText(tag).width + 8, th = Math.max(12, Math.round(g * 0.34));
-        ctx.fillStyle = '#2a2a2f'; roundRect(ctx, x - tw / 2, y - g / 2 - th - 3, tw, th, 4); ctx.fill();
-        ctx.fillStyle = '#ededef'; ctx.fillText(tag, x, y - g / 2 - th / 2 - 2.5);
+        ctx.fillStyle = '#2a2a2f'; roundRect(ctx, q[0] - tw / 2, q[1] - g / 2 - th - 3, tw, th, 4); ctx.fill();
+        ctx.fillStyle = '#ededef'; ctx.fillText(tag, q[0], q[1] - g / 2 - th / 2 - 2.5);
       }
       ctx.globalAlpha = 1;
     }
 
-    // what comes next, top left
+    // ---- what comes next, top left
     let nextChord = null;
     const ci = lowerBound(p.chords, now - 0.05, 't');
     if (ci < p.chords.length && p.chords[ci].t - now < 2.5) nextChord = p.chordName(p.chords[ci].id);
     ctx.textAlign = 'left';
     if (nextChord) { ctx.fillStyle = '#f3c77e'; ctx.font = '700 22px "Space Grotesk", Inter, sans-serif'; ctx.fillText(nextChord, 14, 26); }
     ctx.fillStyle = '#a89f92'; ctx.font = '600 11px Inter, system-ui, sans-serif';
-    ctx.fillText('mano en el traste ' + aFret, 14, nextChord ? 48 : 20);
+    let handText = 'mano en el traste ' + aFret;
+    if (nextAnchor && nextAnchor.fret !== aFret && nextAnchor.time - now < 2) handText += '  →  ' + nextAnchor.fret;
+    ctx.fillText(handText, 14, nextChord ? 48 : 20);
     if (p.items.length && now < p.items[0].t && p.items[0].t - now < 4 && p.playing) {
       ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(243,199,126,0.9)'; ctx.font = '700 40px "Space Grotesk", Inter, sans-serif';
       ctx.fillText(String(Math.ceil(p.items[0].t - now)), w / 2, h * 0.3);

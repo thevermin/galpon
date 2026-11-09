@@ -278,6 +278,42 @@ void drummerFromVar (DrummerSettings& d, const juce::var& v)
     d.followTrack     = (int) getOrDefault (v, "followTrack", d.followTrack);
 }
 
+juce::var sectionsToVar (const std::vector<SongSection>& sections)
+{
+    juce::Array<juce::var> a;
+    for (auto& x : sections)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("beat", x.beat);
+        o->setProperty ("length", x.length);
+        o->setProperty ("kind", x.kind);
+        a.add (juce::var (o));
+    }
+    return a;
+}
+
+std::vector<SongSection> sectionsFromVar (const juce::var& v)
+{
+    static const juce::StringArray kinds { "intro", "verse", "prechorus", "chorus", "bridge", "solo", "outro" };
+    std::vector<SongSection> out;
+    if (auto* a = v.getArray())
+        for (auto& x : *a)
+        {
+            SongSection s;
+            s.beat = juce::jmax (0.0, (double) getOrDefault (x, "beat", 0.0));
+            s.length = juce::jmax (0.25, (double) getOrDefault (x, "length", 16.0));
+            s.kind = getOrDefault (x, "kind", "verse").toString();
+            if (! kinds.contains (s.kind)) s.kind = "verse";
+            out.push_back (s);
+        }
+    std::sort (out.begin(), out.end(), [] (const SongSection& a, const SongSection& b) { return a.beat < b.beat; });
+    // No overlaps: a part ends where the next one starts
+    for (size_t i = 0; i + 1 < out.size(); ++i)
+        out[i].length = juce::jmin (out[i].length, out[i + 1].beat - out[i].beat);
+    out.erase (std::remove_if (out.begin(), out.end(), [] (const SongSection& s) { return s.length < 0.25; }), out.end());
+    return out;
+}
+
 juce::var chordsToVar (const std::vector<ChordSpan>& chords)
 {
     juce::Array<juce::var> a;

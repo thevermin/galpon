@@ -95,6 +95,9 @@ public:
     Slot*  findSlot (int trackId, int slotIndex);    // slotIndex -1 = instrument
 
     void   regenerateDrummer (Track&, int onlyClipId = 0);
+    void   regenerateAllDrummers();
+    /** The track the drummer listens to (its "follow" choice, or the automatic one). */
+    Track* drummerFollowTrack (const Track& drummer) const;
     Clip&  addClip (Track&, Clip clip);
     juce::Result importAudio (int trackId, const juce::File& file, double atBeat);
     juce::Result importMidiFile (const juce::File& file);

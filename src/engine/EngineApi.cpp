@@ -107,6 +107,9 @@ juce::var EngineApi::getState()
         for (auto& sl : t->inserts) inserts.add (slotInfo (sl));
         o->setProperty ("inserts", inserts);
         o->setProperty ("drummer", drummerToVar (t->drummer));
+        if (t->kind == TrackKind::Drummer)
+            if (auto* f = engine.drummerFollowTrack (*t))
+                o->setProperty ("listensTo", juce::var (juce::Array<juce::var> { f->id, f->name, f->kind == TrackKind::Audio }));
         juce::Array<juce::var> clips;
         for (auto& c : t->clips) clips.add (clipToVar (c));
         o->setProperty ("clips", clips);
@@ -127,6 +130,12 @@ juce::var EngineApi::getState()
         chords.add (juce::var (o));
     }
     root->setProperty ("chords", chords);
+    root->setProperty ("sections", sectionsToVar (song.sections));
+    {
+        juce::Array<juce::var> kinds;
+        for (auto& [id, name] : sectionKinds()) kinds.add (juce::Array<juce::var> { id, name });
+        root->setProperty ("sectionKinds", kinds);
+    }
 
     juce::Array<juce::var> master;
     for (auto& sl : song.masterInserts) master.add (slotInfo (sl));
@@ -882,6 +891,21 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
                 if (has (args, "quality")) c.quality = juce::jlimit (0, 3, (int) arg (args, "quality"));
             }
         }
+        engine.dirty = true;
+        changed();
+        return ok();
+    }
+    //---------------------------------------------------------------- parts of the song
+    if (cmd == "setSections")
+    {
+        // The whole list at once (the interface edits a copy): [{beat, length, kind}]
+        if (! (bool) arg (args, "noUndo", false)) engine.pushUndo();
+        auto list = sectionsFromVar (arg (args, "sections"));
+        {
+            const juce::ScopedLock sl (engine.lock);
+            engine.song.sections = std::move (list);
+        }
+        engine.regenerateAllDrummers();
         engine.dirty = true;
         changed();
         return ok();

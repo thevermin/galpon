@@ -833,9 +833,17 @@
     const pct = (v) => Math.round(v * 100) + '%';
     const amount = (v) => (v < 0.05 ? 'Ninguno' : v < 0.35 ? 'Pocos' : v < 0.7 ? 'Algunos' : 'Muchos');
 
-    const followSel = el('select.sel', { 'aria-label': 'El bombo sigue a', onchange: (e) => set('followTrack', +e.target.value) },
-      el('option', { value: 0, text: 'Nadie (toca libre)' }),
-      ...G.state.tracks.filter((t) => t.kind === 'instrument').map((t) => el('option', { value: t.id, text: t.name, selected: t.id === d.followTrack })));
+    // Who it listens to: a recorded guitar (accents, how hard it's played) or the notes of a bass
+    const listens = track.listensTo;   // [id, name, isAudio] of the track it's following now
+    const candidates = G.state.tracks.filter((t) => t.kind === 'audio' || t.kind === 'instrument');
+    const followSel = el('select.sel', { 'aria-label': 'Escucha a', onchange: (e) => set('followTrack', +e.target.value) },
+      el('option', { value: -1, text: 'Automático' + (d.followTrack === -1 && listens ? ` (${listens[1]})` : ''), selected: d.followTrack === -1 }),
+      el('option', { value: 0, text: 'Nadie (toca libre)', selected: d.followTrack === 0 }),
+      ...candidates.map((t) => el('option', { value: t.id, text: t.name + (t.kind === 'audio' ? ' (grabación)' : ' (notas)'), selected: t.id === d.followTrack })));
+    const listenNote = el('span.note', { text: !listens ? (d.followTrack === 0 ? 'Toca libre, sin escuchar a nadie.' : 'Todavía no hay nada grabado para escuchar.')
+      : listens[2] ? `Escucha a "${listens[1]}": marca sus golpes con el bombo y toca más fuerte o más suave según cómo toques.`
+      : `Sigue las notas de "${listens[1]}" con el bombo.` });
+    const relisten = el('button.btn', { title: 'Después de grabar, vuelve a escuchar la grabación y rehace la batería', onclick: () => G.run('setDrummer', { trackId: track.id, settings: d }) }, 'Volver a escuchar');
 
     const left = el('div.stack', { style: { flex: '0 1 300px', minWidth: '260px' } },
       el('div.row', null, el('b', { text: 'Estilo' }), el('span.note', { text: 'Cada baterista toca distinto.' })), styles);
@@ -845,7 +853,9 @@
         slider('Redobles', 'fills', amount),
         slider('Swing', 'swing', pct),
         slider('Humano (imperfección)', 'humanize', pct),
-        el('label.field', null, 'El bombo sigue a', followSel),
+        el('label.field', null, 'Escucha a', followSel),
+        listenNote,
+        listens ? el('div.row', null, relisten) : null,
         el('div.row', null,
           el('button.btn', { onclick: () => G.run('varyDrummer', { trackId: track.id, clipId: clip ? clip.id : 0, unlock: true }) }, clip ? 'Variar esta región' : 'Variar'),
           el('button.btn.primary', { onclick: () => G.run('varyDrummer', { trackId: track.id, unlock: true }) }, 'Generar todo de nuevo'))));
@@ -870,6 +880,7 @@
       body.appendChild(el('div.row', { style: { marginTop: '10px' } },
         el('span.note', { text: `Región seleccionada: ${clip.name}` }),
         el('button.pill' + (clip.fill ? '.on' : ''), { onclick: () => G.run('setClip', { trackId: track.id, clipId: clip.id, fill: !clip.fill }) }, 'Redoble al final'),
+        el('span.note', { text: 'Para que dure más, arrastra su borde derecho (o clic derecho › Alargar hasta el final). Marca las partes arriba, en “Partes”, y el baterista cambia en cada una.' }),
         clip.locked ? el('span.note', { text: 'Editada a mano: el baterista no la cambia (usa “Variar” para devolvérsela).' }) : null));
     }
   };

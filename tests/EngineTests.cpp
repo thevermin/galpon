@@ -1,6 +1,7 @@
 // Engine tests: everything runs offline (no audio interface needed).
 // Run: ./GalponTests   (exit code 0 = all good)
 
+#include <set>
 #include <thread>
 #include "engine/Engine.h"
 #include "engine/EngineApi.h"
@@ -238,6 +239,129 @@ static void testDrummer()
     auto out = t.render (8.0);
     CHECK (rms (out) > 0.01f && finite (out), "la batería suena");
     t.engine.stop();
+}
+
+// A plucked guitar-ish note (decaying, bright) at `at` seconds
+static void addPluck (std::vector<float>& x, double sr, double at, float amp, float freq = 196.0f)
+{
+    const int a = (int) (at * sr);
+    for (int i = 0; i < (int) (0.25 * sr) && a + i < (int) x.size(); ++i)
+    {
+        const float t = i / (float) sr;
+        x[(size_t) (a + i)] += amp * std::exp (-t * 14.0f) * (std::sin (juce::MathConstants<float>::twoPi * freq * t)
+                                + 0.5f * std::sin (juce::MathConstants<float>::twoPi * freq * 3.0f * t));
+    }
+}
+
+static void testDrummerParts()
+{
+    std::cout << "Baterista: groove, partes de la canción y seguir a la guitarra\n";
+    auto steps16 = [] (const std::vector<Note>& notes, int pitch, double from, double to)
+    {
+        std::set<int> out;
+        for (auto& n : notes) if (n.pitch == pitch && n.beat >= from - 0.05 && n.beat < to - 0.05) out.insert ((int) std::lround ((n.beat - from) * 4.0));
+        return out;
+    };
+
+    // Same groove bar after bar (a person repeats it), varied at the end of the phrase
+    {
+        DrumRequest r; r.lengthBeats = 32; r.seed = 11; r.settings.complexity = 0.6f; r.fillAtEnd = false;
+        auto n = generateDrumPart (r);
+        CHECK (steps16 (n, 36, 0, 4) == steps16 (n, 36, 4, 8) && steps16 (n, 38, 4, 8) == steps16 (n, 38, 8, 12),
+               "el bombo y la caja repiten el mismo groove compás a compás");
+    }
+    // Different seeds give different grooves
+    {
+        std::set<std::set<int>> kicks;
+        for (int seed = 1; seed <= 12; ++seed)
+        {
+            DrumRequest r; r.lengthBeats = 8; r.seed = seed; r.settings.complexity = 0.7f;
+            kicks.insert (steps16 (generateDrumPart (r), 36, 0, 4));
+        }
+        CHECK (kicks.size() >= 3, "generar de nuevo da grooves distintos (" << kicks.size() << " de 12)");
+    }
+
+    // Parts: verse (4 bars), chorus (4), bridge (4), outro (2)
+    DrumRequest r; r.lengthBeats = 56; r.seed = 5; r.settings.style = "rock"; r.settings.fills = 0.5f; r.fillAtEnd = false;
+    auto kinds = std::vector<SectionKind> { SectionKind::verse, SectionKind::chorus, SectionKind::bridge, SectionKind::outro };
+    const int lens[] = { 4, 4, 4, 2 };
+    for (int k = 0; k < 4; ++k)
+        for (int b = 0; b < lens[k]; ++b)
+        {
+            DrumBar db; db.kind = kinds[(size_t) k]; db.sectionStart = b == 0; db.sectionEnd = b == lens[k] - 1;
+            db.ending = k == 3 && b == lens[k] - 1;
+            r.bars.push_back (db);
+        }
+    auto n = generateDrumPart (r);
+    auto avgVel = [&] (double from, double to) { float v = 0; int c = 0; for (auto& x : n) if (x.beat >= from && x.beat < to && (x.pitch == 36 || x.pitch == 38) && x.velocity > 0.55f) { v += x.velocity; ++c; } return c ? v / c : 0.0f; };
+    CHECK (avgVel (16, 28) > avgVel (0, 12) + 0.04f, "el estribillo suena más fuerte que la estrofa (golpes de bombo y caja)");
+    CHECK (! steps16 (n, 49, 16, 20).empty() && ! steps16 (n, 49, 32, 36).empty(), "entra con un platillo en cada parte nueva");
+    CHECK (! steps16 (n, 51, 16, 32).empty(), "en el estribillo pasa al ride");
+    auto bridgeSnare = steps16 (n, 38, 36, 40);
+    CHECK (bridgeSnare.count (8) == 1 && bridgeSnare.count (4) == 0, "el puente va a medio tiempo (caja en el 3)");
+    int tomsBeforeChorus = 0;
+    for (auto& x : n) tomsBeforeChorus += x.beat >= 12 && x.beat < 16 && (x.pitch == 43 || x.pitch == 45 || x.pitch == 47 || x.pitch == 50 || x.pitch == 38);
+    CHECK (tomsBeforeChorus >= 2, "hay un redoble antes del estribillo");
+    bool onlyStart = true; int lastBarHits = 0;
+    for (auto& x : n) if (x.beat >= 51.95) { ++lastBarHits; onlyStart &= x.beat < 52.1; }
+    CHECK (lastBarHits >= 2 && onlyStart, "el final termina con un golpe en el último compás");
+
+    // Listening to a guitar: 8 bars at 120 bpm, hits on 1, the "a" of 2 and the "&" of 3; bars 5-6 silent
+    {
+        const double sr = 48000, spb = sr / 2.0;   // 120 bpm
+        std::vector<float> g ((size_t) (spb * 32), 0.0f);
+        for (int bar = 0; bar < 8; ++bar)
+        {
+            if (bar == 4 || bar == 5) continue;
+            for (double b : { 0.0, 1.75, 2.5 }) addPluck (g, sr, (bar * 4 + b) * 0.5 + 0.008, 0.6f);
+            for (double b : { 1.0, 3.0 }) addPluck (g, sr, (bar * 4 + b) * 0.5, 0.12f);
+        }
+        std::vector<float> steps, energy;
+        analyseFollowAudio (g.data(), (int) g.size(), sr, spb, 4.0, steps, energy);
+        CHECK (steps.size() >= 128 && energy.size() == 8, "analiza la guitarra por semicorchea y por compás");
+        CHECK (steps[7] > 0.6f && steps[10] > 0.6f && steps[5] < 0.3f && steps[13] < 0.3f, "encuentra dónde ataca la guitarra");
+        CHECK (energy[4] < 0.05f && energy[0] > 0.8f, "sabe en qué compases la guitarra no toca");
+
+        DrumRequest f; f.lengthBeats = 32; f.seed = 3; f.settings.complexity = 0.3f; f.followSteps = steps; f.followBarEnergy = energy;
+        auto fn = generateDrumPart (f);
+        int withGuitar = 0;
+        for (int bar = 0; bar < 4; ++bar)
+        {
+            auto k = steps16 (fn, 36, bar * 4, bar * 4 + 4);
+            withGuitar += k.count (7) + k.count (10);
+        }
+        CHECK (withGuitar >= 6, "el bombo marca los golpes de la guitarra (" << withGuitar << " de 8)");
+        float quiet = 0, played = 0; int nq = 0, np = 0;
+        for (auto& x : fn) { if (x.beat >= 16 && x.beat < 24) { quiet += x.velocity; ++nq; } if (x.beat < 8) { played += x.velocity; ++np; } }
+        CHECK (nq == 0 || quiet / nq < played / np, "cuando la guitarra para, la batería baja");
+
+        // Through the engine: an audio track named "Guitarra" is followed automatically
+        TestEngine t;
+        auto* gt = t.engine.addTrack (TrackKind::Audio);
+        gt->name = "Guitarra";
+        Clip c; c.midi = false;
+        auto buf = std::make_shared<juce::AudioBuffer<float>> (1, (int) g.size());
+        buf->copyFrom (0, 0, g.data(), (int) g.size());
+        c.audio = buf; c.start = 0; c.length = 32;
+        t.engine.addClip (*gt, c);
+        t.engine.song.bpm = 120;
+        auto* d = t.engine.addTrack (TrackKind::Drummer);
+        CHECK (t.engine.drummerFollowTrack (*d) == gt, "el baterista escucha la guitarra grabada solo");
+        auto state = t.api.getState();
+        bool listed = false;
+        for (auto& tv : *state["tracks"].getArray()) if ((int) tv["id"] == d->id) listed = tv["listensTo"].isArray() && (int) tv["listensTo"][0] == gt->id;
+        CHECK (listed, "la interfaz muestra a quién escucha");
+
+        // Parts from the API
+        const auto json = R"({"sections":[{"beat":0,"length":16,"kind":"verse"},{"beat":16,"length":16,"kind":"chorus"},{"beat":30,"length":8,"kind":"nada"}]})";
+        auto res = t.api.call ("setSections", juce::JSON::parse (json));
+        CHECK (! res.isVoid() && t.engine.song.sections.size() == 3 && t.engine.song.sections[1].kind == "chorus"
+               && std::abs (t.engine.song.sections[1].length - 14.0) < 1e-9 && t.engine.song.sections[2].kind == "verse",
+               "se marcan partes (sin superponerse; tipos raros pasan a estrofa)");
+        CHECK (t.api.getState()["sections"].size() == 3 && t.api.getState()["sectionKinds"].size() == 7, "la interfaz recibe las partes");
+        t.api.call ("undo", {});
+        CHECK (t.engine.song.sections.empty(), "deshacer quita las partes");
+    }
 }
 
 static void testRecording()
@@ -2090,6 +2214,7 @@ int main()
     testBuiltins();
     testPlayback();
     testDrummer();
+    testDrummerParts();
     testRecording();
     testRecordingSafety();
     testSaveLoadUndoExport();

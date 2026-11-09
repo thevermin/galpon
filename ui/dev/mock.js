@@ -38,6 +38,8 @@
   const params = {};
 
   let chords = [];
+  let sections = [{ beat: 0, length: 16, kind: 'intro' }, { beat: 16, length: 32, kind: 'verse' }];
+  const sectionKinds = [['intro', 'Intro'], ['verse', 'Estrofa'], ['prechorus', 'Pre-estribillo'], ['chorus', 'Estribillo'], ['bridge', 'Puente'], ['solo', 'Solo'], ['outro', 'Final']];
   function track(id) { return tracks.find((t) => t.id === id); }
   function addTrack(kind, preset) {
     const t = { id: nextId++, kind, name: kind === 'drummer' ? 'Baterista IA' : kind === 'audio' ? 'Audio ' + (tracks.length + 1) : kind === 'bus' ? (preset === 'delay' ? 'Delay' : 'Reverb') : preset || 'Piano de cola',
@@ -66,7 +68,10 @@
   function state() {
     let length = 0;
     tracks.forEach((t) => t.clips.forEach((c) => { length = Math.max(length, c.start + c.length); }));
-    return { song: Object.assign({}, song, { length }), tracks: JSON.parse(JSON.stringify(tracks)), chords: JSON.parse(JSON.stringify(chords)), master: [], selected, folder: '/Users/demo/Music/Galpon/Prueba.galpon', dirty: true, sampleRate: 48000, version };
+    const copy = JSON.parse(JSON.stringify(tracks));
+    const audio = copy.find((t) => t.kind === 'audio');
+    copy.forEach((t) => { if (t.kind === 'drummer' && audio && t.drummer.followTrack !== 0) t.listensTo = [audio.id, audio.name, true]; });
+    return { song: Object.assign({}, song, { length }), tracks: copy, chords: JSON.parse(JSON.stringify(chords)), sections: JSON.parse(JSON.stringify(sections)), sectionKinds, master: [], selected, folder: '/Users/demo/Music/Galpon/Prueba.galpon', dirty: true, sampleRate: 48000, version };
   }
 
   const ok = (data) => ({ ok: true, data });
@@ -175,6 +180,12 @@
         }
         case 'setChord': if (a.remove) chords.splice(a.index, 1); else Object.assign(chords[a.index], { root: a.root, quality: a.quality, name: ['Do','Do#','Re','Mib','Mi','Fa','Fa#','Sol','Lab','La','Sib','Si'][a.root] + ['', 'm', '7', 'm7'][a.quality] }); return changed();
         case 'clearChords': chords = []; return changed();
+        case 'setSections': {
+          sections = (a.sections || []).map((x) => ({ beat: Math.max(0, x.beat), length: Math.max(0.25, x.length), kind: x.kind })).sort((x, y) => x.beat - y.beat);
+          for (let i = 0; i + 1 < sections.length; i++) sections[i].length = Math.min(sections[i].length, sections[i + 1].beat - sections[i].beat);
+          sections = sections.filter((x) => x.length >= 0.25);
+          return changed();
+        }
         case 'downloadSound': return ok();
         case 'findLostRecordings': return ok([]);
         case 'recoverRecordings': return ok(0);

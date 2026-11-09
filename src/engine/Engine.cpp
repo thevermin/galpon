@@ -271,6 +271,7 @@ juce::Result Engine::saveSong (const juce::File& target)
         for (auto& s : song.masterInserts) master.add (slotToVar (s));
         root->setProperty ("master", master);
         root->setProperty ("chords", chordsToVar (song.chords));
+        root->setProperty ("sections", sectionsToVar (song.sections));
     }
 
     {
@@ -393,6 +394,7 @@ juce::Result Engine::loadSong (const juce::File& folderIn)
         song.countIn = loaded.countIn; song.masterDb = loaded.masterDb; song.nextId = loaded.nextId;
         song.limiter = loaded.limiter;
         song.chords = chordsFromVar (getOrDefault (v, "chords", {}));
+        song.sections = sectionsFromVar (getOrDefault (v, "sections", {}));
         position = 0;
     }
     // old tracks (now in `loaded`) are destroyed here, outside the lock
@@ -1734,9 +1736,43 @@ void Engine::writeAutomation (Track& t, const juce::String& target, float value)
     dirty = true;
 }
 
+static bool isDrumTrack (const Track& t);
+
+Track* Engine::drummerFollowTrack (const Track& drummer) const
+{
+    const int id = drummer.drummer.followTrack;
+    if (id > 0) return song.findTrack (id);
+    if (id == 0) return nullptr;
+    // Automatic: the recorded guitar, else the bass, else any recorded track, else a bass made of notes
+    auto hasAudio = [] (const Track& t) { return std::any_of (t.clips.begin(), t.clips.end(), [] (const Clip& c) { return ! c.midi && c.audio != nullptr; }); };
+    auto named = [] (const Track& t, std::initializer_list<const char*> words)
+    {
+        const auto n = t.name.toLowerCase() + " " + t.instrument.type.toLowerCase();
+        for (auto* w : words) if (n.contains (w)) return true;
+        return false;
+    };
+    Track* best = nullptr;
+    int bestScore = 0;
+    for (auto& tp : song.tracks)
+    {
+        auto& t = *tp;
+        if (&t == &drummer || t.kind == TrackKind::Drummer || t.kind == TrackKind::Bus || isDrumTrack (t)) continue;
+        int score = 0;
+        if (t.kind == TrackKind::Audio && hasAudio (t))
+            score = named (t, { "guit", "gtr" }) ? 50 : named (t, { "bajo", "bass" }) ? 40 : named (t, { "voz", "vocal", "voice" }) ? 5 : 20;
+        else if (t.kind == TrackKind::Instrument && ! t.clips.empty() && named (t, { "bajo", "bass" }))
+            score = 10;
+        if (score > bestScore) { bestScore = score; best = &t; }
+    }
+    return best;
+}
+
 void Engine::regenerateDrummer (Track& t, int onlyClipId)
 {
     std::vector<std::pair<int, std::vector<Note>>> results;
+    const double bpb = song.beatsPerBar();
+    auto* follow = drummerFollowTrack (t);
+
     for (auto& c : t.clips)
     {
         if (! c.midi || c.locked || (onlyClipId != 0 && c.id != onlyClipId)) continue;
@@ -1744,24 +1780,80 @@ void Engine::regenerateDrummer (Track& t, int onlyClipId)
         DrumRequest r;
         r.settings = t.drummer;
         r.lengthBeats = c.length;
-        r.beatsPerBar = song.beatsPerBar();
+        r.beatsPerBar = bpb;
         r.seed = c.seed + t.id * 13;
         r.fillAtEnd = c.fill;
 
-        if (auto* follow = song.findTrack (t.drummer.followTrack))
+        // The parts of the song this region crosses, bar by bar
+        if (! song.sections.empty())
         {
-            for (auto& fc : follow->clips)
+            const int bars = juce::jmax (1, (int) std::ceil (c.length / bpb - 1.0e-6));
+            auto partAt = [&] (double beat) -> int
             {
-                if (! fc.midi) continue;
-                const double L = juce::jmax (0.25, juce::jmin (fc.loopLength, fc.length));
-                for (double rep = 0; rep < fc.length; rep += L)
-                    for (auto& n : fc.notes)
+                for (int i = 0; i < (int) song.sections.size(); ++i)
+                    if (beat >= song.sections[(size_t) i].beat - 1.0e-6 && beat < song.sections[(size_t) i].beat + song.sections[(size_t) i].length - 1.0e-6) return i;
+                return -1;
+            };
+            for (int b = 0; b < bars; ++b)
+            {
+                const double at = c.start + b * bpb + 0.01;
+                const int i = partAt (at), next = partAt (at + bpb), prev = partAt (at - bpb);
+                DrumBar db;
+                db.kind = i >= 0 ? sectionKindFromId (song.sections[(size_t) i].kind) : SectionKind::none;
+                db.sectionStart = i >= 0 && i != prev;
+                db.sectionEnd = i >= 0 && next != i;
+                db.ending = db.kind == SectionKind::outro && next != i
+                         && song.sections[(size_t) i].beat + song.sections[(size_t) i].length <= c.start + (b + 1) * bpb + 0.01;
+                r.bars.push_back (db);
+            }
+        }
+
+        if (follow != nullptr)
+        {
+            if (follow->kind == TrackKind::Audio)
+            {
+                // Listen to the recording under this region
+                const int n = (int) beatsToSamples (c.length);
+                std::vector<float> mono ((size_t) juce::jmax (0, n), 0.0f);
+                bool any = false;
+                for (auto& fc : follow->clips)
+                {
+                    if (fc.midi || fc.audio == nullptr || fc.end() <= c.start || fc.start >= c.end()) continue;
+                    const auto& buf = *fc.audio;
+                    const juce::int64 clipAt = (juce::int64) beatsToSamples (fc.start - c.start);   // where the clip starts, from the region start
+                    const juce::int64 clipLen = (juce::int64) beatsToSamples (fc.length);
+                    const float g = juce::Decibels::decibelsToGain (fc.gainDb) / (float) juce::jmax (1, buf.getNumChannels());
+                    for (juce::int64 i = std::max<juce::int64> (0, clipAt); i < std::min<juce::int64> (n, clipAt + clipLen); ++i)
                     {
-                        if (n.beat >= L) continue;
-                        const double b = fc.start + rep + n.beat - c.start;
-                        if (b >= 0 && b < c.length && rep + n.beat < fc.length)
-                            r.followOnsets.push_back (b);
+                        const juce::int64 src = i - clipAt + std::max<juce::int64> (0, fc.offsetSamples);
+                        if (src < 0 || src >= buf.getNumSamples()) continue;
+                        float v = 0.0f;
+                        for (int ch = 0; ch < buf.getNumChannels(); ++ch) v += buf.getSample (ch, (int) src);
+                        mono[(size_t) i] += v * g;
+                        any = true;
                     }
+                }
+                if (any)
+                    analyseFollowAudio (mono.data(), n, sampleRate, beatsToSamples (1.0), bpb, r.followSteps, r.followBarEnergy);
+            }
+            else
+            {
+                // Notes: where they start, and how hard
+                r.followSteps.assign ((size_t) std::ceil (c.length * 4.0) + 1, 0.0f);
+                for (auto& fc : follow->clips)
+                {
+                    if (! fc.midi) continue;
+                    const double L = juce::jmax (0.25, juce::jmin (fc.loopLength, fc.length));
+                    for (double rep = 0; rep < fc.length; rep += L)
+                        for (auto& note : fc.notes)
+                        {
+                            if (note.beat >= L || rep + note.beat >= fc.length) continue;
+                            const double b = fc.start + rep + note.beat - c.start;
+                            const long k = std::lround (b * 4.0);
+                            if (k >= 0 && k < (long) r.followSteps.size())
+                                r.followSteps[(size_t) k] = juce::jmax (r.followSteps[(size_t) k], 0.75f + 0.25f * note.velocity);
+                        }
+                }
             }
         }
         results.emplace_back (c.id, generateDrumPart (r));
@@ -1776,6 +1868,12 @@ void Engine::regenerateDrummer (Track& t, int onlyClipId)
         }
     t.needsAllNotesOff = true;
     dirty = true;
+}
+
+void Engine::regenerateAllDrummers()
+{
+    for (auto& tp : song.tracks)
+        if (tp->kind == TrackKind::Drummer) regenerateDrummer (*tp);
 }
 
 Clip& Engine::addClip (Track& t, Clip c)
@@ -2453,6 +2551,7 @@ juce::var Engine::snapshot() const
     o->setProperty ("key", song.key);
     o->setProperty ("minor", song.minor);
     o->setProperty ("chords", chordsToVar (song.chords));
+    o->setProperty ("sections", sectionsToVar (song.sections));
     juce::Array<juce::var> tracks;
     for (auto& t : song.tracks)
     {
@@ -2529,6 +2628,7 @@ void Engine::restore (const juce::var& v)
     song.key = getOrDefault (v, "key", song.key).toString();
     song.minor = (bool) getOrDefault (v, "minor", song.minor);
     if (auto cv = getOrDefault (v, "chords", {}); cv.isArray()) song.chords = chordsFromVar (cv);
+    song.sections = sectionsFromVar (getOrDefault (v, "sections", {}));
     if (auto* tracks = getOrDefault (v, "tracks", {}).getArray())
         for (auto& tv : *tracks)
             if (auto* t = song.findTrack ((int) getOrDefault (tv, "id", 0)))
