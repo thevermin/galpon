@@ -112,7 +112,9 @@
       const [s, f] = riff[b % riff.length];
       const n = { t, s: b >= 88 ? s + 3 : s, f: b >= 88 ? f + 5 : f, sus: b % 8 === 7 ? 0.9 : 0 };
       if (b % 16 === 5) n.ho = true;
-      if (b % 16 === 9) { n.bn = 1; n.sus = 0.8; }
+      if (b % 16 === 9) { n.bn = 1; n.sus = 1.2; n.bnv = [{ t: 0, v: 0 }, { t: 0.2, v: 0.5 }, { t: 0.45, v: 0.5 }, { t: 0.7, v: 1 }, { t: 1.1, v: 0 }]; }
+      if (b % 16 === 1) { n.bn = 1; n.sus = 0.9; n.bnv = [{ t: 0, v: 1 }, { t: 0.5, v: 1 }, { t: 0.8, v: 0 }]; }
+      if (b % 16 === 15) { n.slu = Math.max(1, n.f - 3) + 5; n.sus = 0.6; }
       if (b % 16 === 13) { n.sl = n.f + 2; n.sus = 0.4; }
       if (b % 12 === 2) n.pm = true;
       if (b % 16 === 11) { n.hm = true; n.f = 12; }

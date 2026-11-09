@@ -1166,6 +1166,21 @@
       string's height. The notes carry no numbers: the lane lights up under them and the fret
       number is on the neck. The camera drifts slowly to where the hand goes. */
   const cam = { x: 4, span: 8, t: 0 };
+  const BEND_W = 0.6;   // how far sideways a one-step bend pushes the tail (in frets)
+  /** How bent the note is (in steps) `dt` seconds after it starts: from the song's bend curve,
+      or for a plain bend, rising over the first third of the note. */
+  function bendAt(nt, dt) {
+    const pts = nt.bnv;
+    if (pts && pts.length) {
+      if (dt <= pts[0].t) return pts[0].v || 0;
+      for (let i = 1; i < pts.length; i++)
+        if (dt <= pts[i].t) { const a = pts[i - 1], b = pts[i]; return (a.v || 0) + ((b.v || 0) - (a.v || 0)) * (dt - a.t) / Math.max(1e-6, b.t - a.t); }
+      return pts[pts.length - 1].v || 0;
+    }
+    if (!nt.bn) return 0;
+    const len = Math.max(0.2, nt.sus || 0.35);
+    return nt.bn * Math.min(1, dt / (len * 0.35));
+  }
   function drawHighway3D(now) {
     const { ctx, w, h } = fit(hw3);
     const p = play, n = p.strings, s = opts.size;
@@ -1340,28 +1355,35 @@
         if (ze > zs) {
           const half = open ? aWidth / 2 - 0.15 : 0.2;
           const Xt = slideTo ? slideTo - 0.5 : X;
-          // a bend pushes the tail sideways (like the string being pushed), more for a bigger bend,
-          // in the first part of the note; then it holds there
-          const bendShift = nt.bn ? Math.min(1.6, 0.55 * nt.bn + 0.25) : 0;
+          // a bend pushes the tail sideways, like the string being pushed: as far as the bend goes
+          // at each moment (the song's bend curve: prebends, releases, bends in steps)
           const xAt = (zz) => {
             const f = Math.min(1, Math.max(0, (zz - t0) / Math.max(0.01, t1 - t0)));
-            return X + (Xt - X) * f + bendShift * Math.min(1, f / 0.35);
+            return X + (Xt - X) * f + BEND_W * bendAt(nt, zz - t0);
+          };
+          // an unpitched slide drops off at the end
+          const yAt = (zz) => {
+            if (!(nt.slu > 0)) return Y;
+            const f = Math.min(1, Math.max(0, (zz - t0) / Math.max(0.01, t1 - t0)));
+            return f < 0.7 ? Y : Y * (1 - (f - 0.7) / 0.3 * 0.85);
           };
           // vibrato: a sawtooth tail; tremolo picking: a tight zigzag
           const wav = nt.vb ? 0.14 : nt.tr ? 0.07 : 0, per = nt.tr ? 0.035 : 0.09;
-          const steps = wav ? Math.max(12, Math.round((ze - zs) / per * 2)) : slideTo || bendShift ? 18 : 1;
+          const curved = slideTo || nt.bn || (nt.bnv && nt.bnv.length);
+          const steps = wav ? Math.max(12, Math.round((ze - zs) / per * 2)) : curved ? 24 : 1;
           const left = [], right = [];
           for (let k = 0; k <= steps; k++) {
             const zz = zs + (ze - zs) * k / steps;
             let off = 0;
-            if (wav) { const ph = ((zz + (nt.t - now < 0 ? 0 : 0)) / per) % 1; off = nt.tr ? ((k % 2) ? wav : -wav) : wav * (ph < 0.75 ? ph / 0.75 : (1 - ph) / 0.25); }
-            left.push(P(xAt(zz) - half + off, Y, zz)); right.push(P(xAt(zz) + half + off, Y, zz));
+            if (wav) { const ph = (zz / per) % 1; off = nt.tr ? ((k % 2) ? wav : -wav) : wav * (ph < 0.75 ? ph / 0.75 : (1 - ph) / 0.25); }
+            const yy = yAt(zz);
+            left.push(P(xAt(zz) - half + off, yy, zz)); right.push(P(xAt(zz) + half + off, yy, zz));
           }
           ctx.globalAlpha = (mk && !mk.hit ? 0.25 : holding ? 0.9 : 0.55) * fade;
           poly(left.concat(right.reverse()), c);
           if (slideTo) {
             // an arrow at the end and the fret it lands on
-            const e = P(Xt, Y, ze), e0 = P(xAt(ze - 0.05), Y, ze - 0.05);
+            const e = P(xAt(ze), yAt(ze), ze), e0 = P(xAt(ze - 0.05), yAt(ze - 0.05), ze - 0.05);
             const ang = Math.atan2(e[1] - e0[1], e[0] - e0[0]), al = Math.max(6, e[2] * 0.12);
             ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(e[0] + Math.cos(ang) * al, e[1] + Math.sin(ang) * al);
             ctx.lineTo(e[0] + Math.cos(ang + 2.4) * al, e[1] + Math.sin(ang + 2.4) * al); ctx.lineTo(e[0] + Math.cos(ang - 2.4) * al, e[1] + Math.sin(ang - 2.4) * al); ctx.closePath(); ctx.fill();
@@ -1370,7 +1392,8 @@
           ctx.globalAlpha = 1;
         }
       }
-      const q = P(X, Y, z);
+      const pre = BEND_W * bendAt(nt, 0);                   // a prebend: the note is already pushed off its string
+      const q = P(X + pre, Y, z);
       if (passed) {
         if (!mk || !mk.hit) return;
         const age = (performance.now() - mk.at) / 1000;
@@ -1423,8 +1446,9 @@
         if (muted && g > 10) { ctx.fillStyle = '#f2f2f3'; ctx.font = '700 ' + Math.round(g * 0.5) + 'px Inter, sans-serif'; ctx.fillText('✕', q[0], q[1] + 1); }
       }
       // bend: little arrows on the note, one for a half step, two for a whole one, three for more
-      if (nt.bn && g > 8) {
-        const k = nt.bn <= 0.5 ? 1 : nt.bn <= 1 ? 2 : 3, cw = g * 0.32, ch = g * 0.16;
+      const bendMax = nt.bnv && nt.bnv.length ? Math.max(...nt.bnv.map((b) => b.v || 0)) : nt.bn || 0;
+      if (bendMax > 0 && g > 8) {
+        const k = bendMax <= 0.5 ? 1 : bendMax <= 1 ? 2 : 3, cw = g * 0.32, ch = g * 0.16;
         ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.5, g * 0.08); ctx.lineJoin = 'round';
         for (let j = 0; j < k; j++) {
           const yy = q[1] - g * 0.5 - 5 - j * (ch + 3);
