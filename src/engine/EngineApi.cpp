@@ -1682,6 +1682,35 @@ juce::Array<juce::var> EngineApi::chainForTone (const juce::String& rigId, const
         return f.getFullPathName();
     };
 
+    // A sound chosen by hand from the presets: that's it
+    if (const auto preset = assign["preset"].toString(); preset.isNotEmpty() && preset != "auto")
+    {
+        // Typical amp settings (0-10 knobs, as players write them, turned into dB around noon)
+        auto knob = [] (double v) { return (v - 5.0) * 2.4; };
+        auto amp = [&] (double gain, double b, double m, double t)
+        { add ("amp", { { "gain", gain }, { "bass", knob (b) }, { "mid", knob (m) }, { "treble", knob (t) }, { "cab", 1.0 }, { "master", -8.0 } }); };
+        if (preset == "clean")       { amp (0.08, 5, 6, 7);  add ("reverb", { { "size", 0.45 }, { "mix", 0.2 } }); }
+        else if (preset == "chorus") { amp (0.08, 5, 6, 7);  add ("chorus", { { "rate", 0.6 }, { "depth", 0.35 }, { "mix", 0.45 } }); add ("reverb", { { "size", 0.5 }, { "mix", 0.22 } }); }
+        else if (preset == "acoustic") { amp (0.03, 4, 5, 8); add ("chorus", { { "rate", 0.4 }, { "depth", 0.15 }, { "mix", 0.2 } }); add ("reverb", { { "size", 0.4 }, { "mix", 0.25 } }); }
+        else if (preset == "crunch")  { amp (0.42, 5, 8, 5);  add ("reverb", { { "size", 0.3 }, { "mix", 0.1 } }); }
+        else if (preset == "drive")   { amp (0.68, 6, 5, 6);  add ("reverb", { { "size", 0.3 }, { "mix", 0.08 } }); }
+        else if (preset == "highgain")
+        {
+            // a tube-screamer-style boost in front tightens a high-gain amp (the classic metal trick)
+            add ("drive", { { "drive", 0.12 }, { "tone", 3800.0 }, { "level", 4.0 }, { "mix", 1.0 } });
+            amp (0.95, 7, 4, 5);
+        }
+        else if (preset == "lead")
+        {
+            add ("drive", { { "drive", 0.25 }, { "tone", 3500.0 }, { "level", 2.0 }, { "mix", 1.0 } });
+            amp (0.62, 3, 7, 5);
+            add ("delay", { { "division", 0.0 }, { "ms", 380.0 }, { "feedback", 0.28 }, { "mix", 0.2 } });
+            add ("reverb", { { "size", 0.5 }, { "mix", 0.18 } });
+        }
+        else if (preset == "bass")    { amp (0.15, 7, 5, 4); }
+        if (! chain.isEmpty()) return chain;
+    }
+
     // the rig, if the pack describes it
     juce::var rig;
     if (gamePack != nullptr && rigId.isNotEmpty())

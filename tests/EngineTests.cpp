@@ -2246,6 +2246,20 @@ static void testFeedpak()
         int active = 0;
         if (st != nullptr) for (auto& sl : st->inserts) active += sl.bypass ? 0 : 1;
         CHECK (st != nullptr && st->inserts.size() > 4 && active < (int) st->inserts.size(), "solo el sonido de la parte actual está prendido");
+        // a sound picked by hand for a tone: Galpon's high-gain preset (boost + amp)
+        {
+            const auto key = tone["data"]["tones"][1]["key"].toString();
+            auto obj = std::make_unique<juce::DynamicObject>();
+            auto* pre = new juce::DynamicObject(); pre->setProperty ("preset", "highgain");
+            auto* assign = new juce::DynamicObject(); assign->setProperty (key, juce::var (pre));
+            obj->setProperty ("on", true); obj->setProperty ("arrangement", "lead"); obj->setProperty ("assign", juce::var (assign));
+            auto picked = t.api.call ("gameTone", juce::var (obj.release()));
+            auto* pt = t.engine.song.findTrack ((int) picked["data"]["trackId"]);
+            juce::StringArray kinds;
+            if (pt != nullptr) for (auto& sl : pt->inserts) if (auto* b = dynamic_cast<BuiltinProcessor*> (sl.processor.get())) kinds.add (b->getTypeId());
+            CHECK ((bool) picked["ok"] && picked["data"]["tones"][1]["chain"].toString().containsIgnoreCase ("distors"),
+                   "se puede elegir un sonido de Galpon para una parte (" << picked["data"]["tones"][1]["chain"].toString() << ")");
+        }
         t.api.call ("gameTone", juce::JSON::parse ("{\"on\":false}"));
         CHECK ((int) t.engine.song.tracks.size() == tracksBefore && t.engine.song.findTrack (gt->id)->monitor, "apagarlo deja todo como antes");
         CHECK ((bool) t.api.call ("gameStemVolume", juce::JSON::parse ("{\"id\":\"drums\",\"gain\":0.5}"))["ok"]

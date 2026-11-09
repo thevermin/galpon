@@ -458,7 +458,7 @@ body.in-game #app { visibility: hidden; }
 .g-feedback.bad { background: #3a1c1c; color: #fca5a5; }
 .g-feedback.warn { background: #3a2a18; color: #f3c77e; }
 .g-tonenow { position: absolute; right: 236px; top: 8px; font-size: 11.5px; color: var(--accent-soft-ink); pointer-events: none; }
-.g-lyrics { flex: none; text-align: center; padding: 2px 16px; min-height: 2.4em; font-size: 24px; }
+.g-lyrics { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 3; width: min(70%, 900px); text-align: center; padding: 4px 16px; font-size: 26px; pointer-events: none; text-shadow: 0 2px 6px rgba(0,0,0,.85), 0 0 18px rgba(0,0,0,.6); }
 .g-lyrics.empty { display: none; }
 .g-lyr-now { font-weight: 600; color: #7a7a83; line-height: 1.3; }
 .g-lyr-now .sung { color: #ededef; }

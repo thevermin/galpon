@@ -403,7 +403,7 @@
     if (!play || !hw) return;
     const d = dims();
     const v = opts.view;   // '2d', '3d' or 'both'
-    const avail = (ui.stage ? ui.stage.clientHeight : 600) - (ui.lyrics.classList.contains('empty') ? 0 : 76) - 46;
+    const avail = (ui.stage ? ui.stage.clientHeight : 600) - 46;
     // the tab when it's shown together with the 3D: a bit smaller, under it
     const tabH = d.hwH;
     const h3 = v === '3d' ? Math.max(260, avail) : v === 'both' ? Math.max(220, avail - tabH - 6) : 0;
@@ -498,10 +498,10 @@
       el('span.spacer'),
       el('div.g-group', null, ui.volBtn, ui.soundBtn, el('button.g-btn', { onclick: tune }, G.icon('tuner', 15), 'Afinar')));
 
-    ui.hwwrap = el('div.g-hwwrap', null, hw3, hw, sizeCtl, ui.feedback, ui.toneNow);
+    ui.hwwrap = el('div.g-hwwrap', null, hw3, hw, ui.lyrics, sizeCtl, ui.feedback, ui.toneNow);   // the lyrics float over the top of the game
     ui.fbrow = el('div.g-fbrow', null, ui.next, el('div.g-fbwrap', null, fb));
     root.replaceChildren(el('div.g-play-screen', null, head,
-      ui.stage = el('div.g-stage', null, ui.hwwrap, ui.lyrics, ui.fbrow, ui.panel),
+      ui.stage = el('div.g-stage', null, ui.hwwrap, ui.fbrow, ui.panel),
       foot));
     applySize();
     updateControls();
@@ -637,12 +637,15 @@
     if (p.tone) {
       const list = el('div.g-tones');
       for (const tn of p.tone.tones || []) {
-        const choice = (opts.t3assign[tn.key] && opts.t3assign[tn.key].toneId) || '';
-        const sel = el('select.g-select', { 'aria-label': 'Captura para ' + tn.name, disabled: !(t3 && t3.connected && (t3.tones || []).length),
-          onchange: (e) => assignT3(tn, e.target.value) },
-          el('option', { value: '', text: 'Efectos de Galpon' }),
-          el('option', { value: 'auto', selected: choice === 'auto', text: 'Elegir solo entre mis tonos de TONE3000' }),
-          ((t3 && t3.tones) || []).map((t) => el('option', { value: t.id, selected: String(choice) === String(t.id), text: (t.favorite ? '♥ ' : '') + t.title })));
+        const a = opts.t3assign[tn.key] || {};
+        const choice = a.preset ? 'p:' + a.preset : a.toneId ? String(a.toneId) : '';
+        const t3ok = t3 && t3.connected && (t3.tones || []).length;
+        const sel = el('select.g-select', { 'aria-label': 'Sonido para ' + tn.name, onchange: (e) => assignT3(tn, e.target.value) },
+          el('option', { value: '', text: 'Automático (lo que pide la canción)' }),
+          el('optgroup', { label: 'Sonidos de Galpon' }, ...TONE_PRESETS.map(([id, name]) => el('option', { value: 'p:' + id, selected: choice === 'p:' + id, text: name }))),
+          t3ok ? el('optgroup', { label: 'Mis tonos de TONE3000' },
+            el('option', { value: 'auto', selected: choice === 'auto', text: 'El que mejor vaya, entre mis tonos' }),
+            ...(t3.tones || []).map((t) => el('option', { value: t.id, selected: choice === String(t.id), text: (t.favorite ? '♥ ' : '') + t.title }))) : null);
         const dl = t3 && choice && choice !== 'auto' && t3.downloading ? t3.downloading[choice] : undefined;
         list.append(el('div.g-tone' + (p.toneName === tn.name ? '.on' : ''), null,
           el('div', null, el('b', { text: tn.name }), el('small', { text: dl === '' ? 'Bajando la captura…' : dl ? dl : tn.chain + (tn.heard ? ` — en la canción suena ${tn.heard}` : '') })), sel));
@@ -680,6 +683,12 @@
       el('div.g-sound', null, box));
   }
 
+  /** Galpon's sounds to pick by hand for a part of the song (built from the usual amp settings). */
+  const TONE_PRESETS = [
+    ['clean', 'Limpio'], ['chorus', 'Limpio con chorus'], ['acoustic', 'Acústico'], ['crunch', 'Crunch (rock clásico)'],
+    ['drive', 'Distorsión (hard rock)'], ['highgain', 'Alta ganancia (metal)'], ['lead', 'Solo (con delay)'], ['bass', 'Bajo'],
+  ];
+
   /** Words that tell amps apart, to match a song's tone with one of your TONE3000 tones. */
   const FAMILY = {
     british: ['marshall', 'jcm', 'plexi', 'vox', 'ac30', 'orange', 'british', 'jtm', 'super lead', 'bluesbreaker'],
@@ -714,6 +723,7 @@
 
   async function assignT3(tn, value) {
     if (!value) delete opts.t3assign[tn.key];
+    else if (value.startsWith('p:')) opts.t3assign[tn.key] = { preset: value.slice(2) };
     else opts.t3assign[tn.key] = { toneId: value };
     store.set('t3assign', opts.t3assign);
     await resolveAssignments();
@@ -723,10 +733,14 @@
   /** Turns the choices into local files (downloading what's missing), then the engine builds the sound. */
   async function resolveAssignments() {
     const out = {};
-    if (!t3 || !t3.connected || !play.tone) return out;
+    if (!play.tone) return out;
+    // Galpon's own presets, chosen by hand
+    for (const tn of play.tone.tones || []) { const a = opts.t3assign[tn.key]; if (a && a.preset) out[tn.key] = { preset: a.preset }; }
+    if (!t3 || !t3.connected) return out;
     const need = [];
     for (const tn of play.tone.tones || []) {
       let a = opts.t3assign[tn.key];
+      if (a && a.preset) continue;
       let id = a && a.toneId;
       if (id === 'auto') { const m = matchT3(tn); id = m ? m.id : null; }
       if (!id) continue;
@@ -853,11 +867,44 @@
   // ------------------------------------------------------------------ transport
   function toggle() {
     if (!play) return;
+    if (play.countdown) { clearTimeout(play.countdown.timer); play.countdown = null; updateControls(); return; }   // cancel the count
     if (play.ended) { play.ended = false; hideEnd(); resetScore(); updateScoreHud(); }
+    if (!play.playing) {
+      const pos = displayPos();
+      const first = play.items.length ? play.items[0].t : 0;
+      // No waiting through a long intro: start 3 s before the first note (the count shows 3, 2, 1)
+      if (pos < first - 3.2) { seek(Math.max(0, first - 3)); startNow(); return; }
+      // Coming back from a pause: back up a little and count 3, 2, 1 so you can get ready
+      if (pos > 0.5 && pos < play.length - 0.5) {
+        seek(Math.max(0, pos - 1.5));
+        const until = performance.now() + 2400;
+        play.countdown = { until, timer: setTimeout(() => { if (play && play.countdown) { play.countdown = null; startNow(); } }, 2400) };
+        updateControls();
+        return;
+      }
+    }
+    startNow();
+  }
+  function startNow() {
     G.call('gameToggle');
     play.playing = !play.playing;   // the tick confirms
     clock.anchorAt = performance.now();
     updateControls();
+  }
+  /** The 3-2-1 before playing again, over the game. */
+  function drawCountdown(ctx, w, h) {
+    if (!play || !play.countdown) return;
+    const left = (play.countdown.until - performance.now()) / 1000;
+    if (left <= 0) return;
+    const n = Math.ceil(left / 0.8), frac = (left % 0.8) / 0.8;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, 0, w, h);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.globalAlpha = 0.5 + 0.5 * frac;
+    ctx.fillStyle = '#ffffff'; ctx.font = '800 ' + Math.round(90 + 40 * frac) + 'px "Space Grotesk", Inter, sans-serif';
+    ctx.shadowColor = 'rgba(90,200,255,0.8)'; ctx.shadowBlur = 30;
+    ctx.fillText(String(n), w / 2, h / 2);
+    ctx.restore();
   }
   function seek(t) {
     if (!play) return;
@@ -887,12 +934,13 @@
   }
   function updateControls() {
     if (!play || !ui.playBtn) return;
-    ui.playBtn.replaceChildren(G.icon(play.playing ? 'pause' : 'play', 20));
+    ui.playBtn.replaceChildren(G.icon(play.playing || play.countdown ? 'pause' : 'play', 20));
     ui.playBtn.setAttribute('aria-label', play.playing ? 'Pausa (Espacio)' : 'Tocar (Espacio)');
     ui.loopBtn.classList.toggle('on', !!play.loop || play.markA !== null);
     ui.loopBtn.replaceChildren(G.icon('cycle', 15), play.loop ? `Repitiendo ${fmtTime(play.loop.a)}–${fmtTime(play.loop.b)} ✕` : play.markA !== null ? `A en ${fmtTime(play.markA)} · marca B` : 'Repetir A–B');
   }
   async function closeSong() {
+    if (play && play.countdown) { clearTimeout(play.countdown.timer); play.countdown = null; }
     stopDrawing();
     hideEnd();
     clearTimeout(t3Timer);
@@ -968,6 +1016,7 @@
     const now = displayPos();
     if (opts.view !== '2d') drawHighway3D(now);
     if (opts.view !== '3d') drawHighway(now);
+    if (play.countdown) { const c = opts.view === '2d' ? hw : hw3; const cx = c.getContext('2d'); cx.setTransform(1, 0, 0, 1, 0, 0); drawCountdown(cx, c.width, c.height); }
     if (opts.view === '2d') drawFretboard(now);
     drawLyrics(now);
     const sec = sectionAt(now);
@@ -1166,6 +1215,9 @@
       string's height. The notes carry no numbers: the lane lights up under them and the fret
       number is on the neck. The camera drifts slowly to where the hand goes. */
   const cam = { x: 4, span: 8, t: 0 };
+  /** Where fret `f` sits along the neck (frets can be fractional): each fret is 2^(1/12) narrower
+      than the one before, like on a real guitar. Fret 1 is about one unit wide. */
+  const FX = (f) => 18 * (1 - Math.pow(2, -Math.max(-1, f) / 12));
   const BEND_W = 0.6;   // how far sideways a one-step bend pushes the tail (in frets)
   /** How bent the note is (in steps) `dt` seconds after it starts: from the song's bend curve,
       or for a plain bend, rising over the first third of the note. */
@@ -1207,30 +1259,36 @@
     }
 
     // ---- the camera
+    // Frets get narrower up the neck, like on a real guitar: positions go through FX (in "frets"
+    // in, distance along the neck out); everything else is written in frets.
     const span = cam.span;
+    const camW = FX(cam.x);
+    const spanW = FX(cam.x + span / 2) - FX(Math.max(0, cam.x - span / 2)) || span;
     const ahead = 4.0 / opts.zoom;                       // seconds visible into the distance
-    const depth = (span * 4.2) / ahead;                  // world units per second: a long road
-    const strGap = Math.min(0.32, 1.7 / n) * Math.min(1.25, Math.max(0.8, s));
+    const depth = (spanW * 4.2) / ahead;                 // world units per second: a long road
+    const strGap = Math.min(0.32, 1.7 / n) * Math.min(1.25, Math.max(0.8, s)) * spanW / span;
     // Like Rocksmith: the thickest string on top (as you see your own guitar looking down)
     const hOf = (str) => (n - str) * strGap;            // height above the floor: string 0 (the lowest) highest
     // The camera sits above and behind, off to the right of the hand; low on the neck it looks
     // across more, higher up it comes round towards the middle (the neck turns as you move)
     // Behind the neck and a little above, almost straight down the road (like Rocksmith); a slight
     // turn that follows the hand: low on the neck it looks a bit to the right, higher up straight on
+    // the camera is a bit to the left of the hand, so the road runs off to the right (like Rocksmith);
+    // higher up the neck it comes round more behind the hand
     const along = Math.min(1, Math.max(0, (cam.x - 3) / 14));
-    const side = span * (0.06 - 0.05 * along);
-    const C = { x: cam.x - side, y: span * 0.42, z: -span * 1.05 };
-    const T = { x: cam.x + side * 2, y: 0, z: span * 2.4 };
+    const side = spanW * (0.16 - 0.08 * along);
+    const C = { x: camW - side, y: spanW * 0.46, z: -spanW * 1.25 };
+    const T = { x: camW + side * 1.6, y: 0, z: spanW * 2.4 };
     let F = { x: T.x - C.x, y: T.y - C.y, z: T.z - C.z };
     const fl = Math.hypot(F.x, F.y, F.z); F = { x: F.x / fl, y: F.y / fl, z: F.z / fl };
     let R = { x: F.z, y: 0, z: -F.x };
     const rl = Math.hypot(R.x, R.z); R = { x: R.x / rl, y: 0, z: R.z / rl };
     const U = { x: F.y * R.z - F.z * R.y, y: F.z * R.x - F.x * R.z, z: F.x * R.y - F.y * R.x };
     const focal = Math.min(w * 0.9, h * 1.8) * Math.min(1.2, Math.max(0.85, s));
-    const ox = w * 0.5, oy = h * 0.34;
+    const ox = w * 0.53, oy = h * 0.34;
     /** world (fret X, height Y, seconds ahead) -> screen [x, y, scale] */
     const P = (X, Y, sec) => {
-      const dx = X - C.x, dy = Y - C.y, dz = Math.max(-0.3, sec) * depth - C.z;
+      const dx = FX(X) - C.x, dy = Y - C.y, dz = Math.max(-0.3, sec) * depth - C.z;
       const cz = Math.max(0.2, dx * F.x + dy * F.y + dz * F.z);
       const cx = dx * R.x + dy * R.y + dz * R.z, cy = dx * U.x + dy * U.y + dz * U.z;
       return [ox + focal * cx / cz, oy - focal * cy / cz, focal / cz];
@@ -1251,6 +1309,32 @@
     const glow = ctx.createRadialGradient(far[0], far[1], 0, far[0], far[1], Math.max(w, h) * 0.7);
     glow.addColorStop(0, 'rgba(40,110,150,0.35)'); glow.addColorStop(0.5, 'rgba(14,40,60,0.25)'); glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+    // Some personality without getting in the way: soft lights drifting slowly in the dark, and the
+    // glow at the end of the road breathes with the beat (a bit more on the first beat of the bar)
+    {
+      let pulse = 0;
+      const bi = lowerBound(p.beats, now + 0.001, 'time') - 1;
+      if (bi >= 0 && p.playing) {
+        const since = now - p.beats[bi].time;
+        pulse = Math.max(0, 1 - since / 0.35) * (p.beats[bi].measure >= 0 ? 1 : 0.5);
+      }
+      if (pulse > 0) {
+        const pg = ctx.createRadialGradient(far[0], far[1], 0, far[0], far[1], Math.max(w, h) * 0.45);
+        pg.addColorStop(0, `rgba(90,200,255,${0.12 * pulse})`); pg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = pg; ctx.fillRect(0, 0, w, h);
+      }
+      for (let k = 0; k < 14; k++) {
+        const r1 = Math.sin(k * 12.9898) * 43758.5453, r2 = Math.sin(k * 78.233) * 12345.678;
+        const fx = r1 - Math.floor(r1), fy = r2 - Math.floor(r2);
+        const t = wall * (0.008 + 0.006 * fx);
+        const x = ((fx + t * (k % 2 ? 1 : -1)) % 1 + 1) % 1 * w;
+        const y = (((fy - t * 0.7) % 1 + 1) % 1) * h * 0.55;
+        const rad = 18 + 46 * fy;
+        const b = ctx.createRadialGradient(x, y, 0, x, y, rad);
+        b.addColorStop(0, k % 5 === 0 ? 'rgba(120,230,200,0.08)' : 'rgba(90,170,255,0.07)'); b.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = b; ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+      }
+    }
     // the floor: dark, lighter close to you
     const n0 = P(cam.x, 0, -0.15), n1 = P(cam.x, 0, zFar);
     const fg = ctx.createLinearGradient(n0[0], n0[1], n1[0], n1[1]);
@@ -1432,27 +1516,37 @@
       const harmonic = nt.hm || nt.hp;
       const muted = nt.mt || nt.fhm;
       if (open) {
-        // open string: a bar across the hand's zone
+        // open string: just a line in the string's colour across the hand's zone (like Rocksmith)
         const a = P(aFret - 1 + 0.1, Y, z), b = P(aFret - 1 + aWidth - 0.1, Y, z);
-        ctx.fillStyle = mk && mk.hit ? c : hollow ? 'rgba(10,10,12,0.25)' : 'rgba(29,29,33,0.9)'; ctx.strokeStyle = c; ctx.lineWidth = Math.max(1.5, g * 0.12);
-        ctx.beginPath(); ctx.moveTo(a[0], a[1] - g * 0.22); ctx.lineTo(b[0], b[1] - g * 0.22); ctx.lineTo(b[0], b[1] + g * 0.22); ctx.lineTo(a[0], a[1] + g * 0.22); ctx.closePath();
-        ctx.fill(); ctx.stroke();
-        if (nt.pm) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(Math.min(a[0], b[0]), a[1] - g * 0.06, Math.abs(b[0] - a[0]), g * 0.12); }
+        ctx.strokeStyle = mk && !mk.hit ? '#f87171' : c; ctx.lineCap = 'round';
+        ctx.shadowColor = c; ctx.shadowBlur = mk && mk.hit ? 18 : 8;
+        ctx.lineWidth = Math.max(3, g * (hollow ? 0.16 : 0.26));
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+        ctx.shadowBlur = 0; ctx.lineCap = 'butt';
+        if (nt.pm) { ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = Math.max(1, g * 0.07); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
       } else {
-        if (mk && mk.hit) { ctx.shadowColor = c; ctx.shadowBlur = 16; }
-        // a gem in the string's colour, lighter on top like it has volume
-        const gg = ctx.createLinearGradient(q[0], q[1] - g / 2, q[0], q[1] + g / 2);
-        gg.addColorStop(0, mk && !mk.hit ? '#3a2323' : 'rgba(255,255,255,0.18)'); gg.addColorStop(0.45, mk && !mk.hit ? '#2a1d1d' : 'rgba(8,12,18,0.85)'); gg.addColorStop(1, mk && !mk.hit ? '#2a1d1d' : 'rgba(8,12,18,0.85)');
-        ctx.fillStyle = mk && mk.hit ? c : hollow ? 'rgba(10,10,12,0.3)' : gg;
-        ctx.strokeStyle = mk && !mk.hit ? "#f87171" : c; ctx.lineWidth = Math.max(2, g * (hollow ? 0.16 : 0.13));
-        if (harmonic) {
-          // harmonic: a diamond
-          ctx.beginPath(); ctx.moveTo(q[0], q[1] - g * 0.55); ctx.lineTo(q[0] + g * 0.55, q[1]); ctx.lineTo(q[0], q[1] + g * 0.55); ctx.lineTo(q[0] - g * 0.55, q[1]); ctx.closePath();
-        } else roundRect(ctx, q[0] - g * 0.68, q[1] - g * 0.36, g * 1.36, g * 0.72, g * 0.12);
-        ctx.fill(); ctx.stroke();
+        if (mk && mk.hit) { ctx.shadowColor = c; ctx.shadowBlur = 18; }
+        // a solid gem in the string's colour, lit from above, with a bright rim
+        const shape = () => {
+          if (harmonic) { ctx.beginPath(); ctx.moveTo(q[0], q[1] - g * 0.55); ctx.lineTo(q[0] + g * 0.55, q[1]); ctx.lineTo(q[0], q[1] + g * 0.55); ctx.lineTo(q[0] - g * 0.55, q[1]); ctx.closePath(); }
+          else roundRect(ctx, q[0] - g * 0.68, q[1] - g * 0.36, g * 1.36, g * 0.72, g * 0.12);
+        };
+        const missed = mk && !mk.hit;
+        shape();
+        if (hollow) { ctx.fillStyle = 'rgba(8,12,18,0.35)'; ctx.fill(); }
+        else {
+          ctx.fillStyle = missed ? '#5a2a2a' : c; ctx.fill();
+          const sh = ctx.createLinearGradient(q[0], q[1] - g * 0.4, q[0], q[1] + g * 0.4);
+          sh.addColorStop(0, 'rgba(255,255,255,0.45)'); sh.addColorStop(0.45, 'rgba(255,255,255,0.05)'); sh.addColorStop(1, 'rgba(0,0,0,0.35)');
+          ctx.fillStyle = sh; ctx.fill();
+        }
+        shape();
+        ctx.strokeStyle = missed ? '#f87171' : hollow ? c : 'rgba(255,255,255,0.75)';
+        ctx.lineWidth = Math.max(hollow ? 2.5 : 1.5, g * (hollow ? 0.16 : 0.06));
+        ctx.stroke();
         ctx.shadowBlur = 0;
         // palm mute: a dark band across (the note sounds dampened)
-        if (nt.pm && !harmonic) { ctx.fillStyle = c; ctx.fillRect(q[0] - g * 0.55, q[1] - g * 0.06, g * 1.1, g * 0.12); }
+        if (nt.pm && !harmonic) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(q[0] - g * 0.6, q[1] - g * 0.07, g * 1.2, g * 0.14); }
         if (muted && g > 10) { ctx.fillStyle = '#f2f2f3'; ctx.font = '700 ' + Math.round(g * 0.5) + 'px Inter, sans-serif'; ctx.fillText('✕', q[0], q[1] + 1); }
       }
       // bend: little arrows on the note, one for a half step, two for a whole one, three for more
