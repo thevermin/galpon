@@ -158,6 +158,9 @@ public:
     juce::Result setActiveTake (Track&, Clip&, int takeIndex);
     /** Renders `numSamples` from the current position (no device needed). Used by export and tests. */
     void renderOffline (juce::AudioBuffer<float>& out, int numSamples);
+    /** Buffers smaller than this stop the audio on most computers (the app can't keep up). */
+    static constexpr int minBufferSize = 32;
+    static int safeBufferSize (juce::AudioIODevice&);
     /** Waits (up to timeoutMs) for instruments still loading their samples. */
     void waitForInstruments (int timeoutMs = 120000);
 

@@ -28,6 +28,14 @@ Engine::Engine (const juce::File& appDataFolder, bool openAudioDevices)
         auto error = deviceManager.initialise (64, 2, saved.get(), true, {}, &preferred);
         if (error.isNotEmpty())
             lastError = error;
+        // A tiny buffer (16 samples) makes the audio stop altogether: nothing plays, nothing records.
+        // If one was saved, start with a safe size instead.
+        if (auto* d = deviceManager.getCurrentAudioDevice(); d != nullptr && d->getCurrentBufferSizeSamples() < minBufferSize)
+        {
+            auto setup = deviceManager.getAudioDeviceSetup();
+            setup.bufferSize = safeBufferSize (*d);
+            deviceManager.setAudioDeviceSetup (setup, true);
+        }
 
         deviceManager.addAudioCallback (this);
         for (auto& d : juce::MidiInput::getAvailableDevices())
@@ -40,6 +48,15 @@ Engine::Engine (const juce::File& appDataFolder, bool openAudioDevices)
     }
 
     startTimer (1000);
+}
+
+int Engine::safeBufferSize (juce::AudioIODevice& d)
+{
+    // 128 if the interface offers it, else the nearest size that isn't too small
+    int best = 0;
+    for (auto b : d.getAvailableBufferSizes())
+        if (b >= minBufferSize && (best == 0 || std::abs (b - 128) < std::abs (best - 128))) best = b;
+    return best > 0 ? best : d.getDefaultBufferSize();
 }
 
 Engine::~Engine()

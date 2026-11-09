@@ -318,7 +318,7 @@ juce::var EngineApi::getAudioSetup()
         o->setProperty ("bufferSize", d->getCurrentBufferSizeSamples());
         juce::Array<juce::var> rates, sizes, inNames, outNames, activeIns, activeOuts;
         for (auto r : d->getAvailableSampleRates()) rates.add (r);
-        for (auto b : d->getAvailableBufferSizes()) sizes.add (b);
+        for (auto b : d->getAvailableBufferSizes()) if (b >= Engine::minBufferSize) sizes.add (b);
         auto allIns = d->getInputChannelNames(), allOuts = d->getOutputChannelNames();
         // Some Macs name channels just "1", "2": make them readable
         for (auto& n : allIns)  if (n.trim().containsOnly ("0123456789")) n = juce::String (u8"Entrada ") + n.trim();
@@ -387,7 +387,7 @@ juce::Result EngineApi::setAudioSetup (const juce::var& args)
     if (has (args, "inputDevice"))  setup.inputDeviceName  = arg (args, "inputDevice").toString();
     if (has (args, "outputDevice")) setup.outputDeviceName = arg (args, "outputDevice").toString();
     if (has (args, "sampleRate"))   setup.sampleRate = (double) arg (args, "sampleRate");
-    if (has (args, "bufferSize"))   setup.bufferSize = (int) arg (args, "bufferSize");
+    if (has (args, "bufferSize"))   setup.bufferSize = juce::jmax (Engine::minBufferSize, (int) arg (args, "bufferSize"));
 
     if (auto* list = arg (args, "inputActive").getArray())
     {
@@ -409,6 +409,13 @@ juce::Result EngineApi::setAudioSetup (const juce::var& args)
         setup.useDefaultOutputChannels = true;
 
     auto error = dm.setAudioDeviceSetup (setup, true);
+    // a new interface may come up with a tiny buffer: never below what the computer can keep up with
+    if (auto* d = dm.getCurrentAudioDevice(); error.isEmpty() && d != nullptr && d->getCurrentBufferSizeSamples() < Engine::minBufferSize)
+    {
+        auto fixed = dm.getAudioDeviceSetup();
+        fixed.bufferSize = Engine::safeBufferSize (*d);
+        error = dm.setAudioDeviceSetup (fixed, true);
+    }
     engine.saveDeviceSettings();
     return error.isEmpty() ? juce::Result::ok() : juce::Result::fail (error);
 }

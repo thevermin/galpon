@@ -112,7 +112,7 @@
       const [s, f] = riff[b % riff.length];
       const n = { t, s: b >= 88 ? s + 3 : s, f: b >= 88 ? f + 5 : f, sus: b % 8 === 7 ? 0.9 : 0 };
       if (b % 16 === 5) n.ho = true;
-      if (b % 16 === 9) n.bn = 1;
+      if (b % 16 === 9) { n.bn = 1; n.sus = 0.8; }
       if (b % 16 === 13) { n.sl = n.f + 2; n.sus = 0.4; }
       if (b % 12 === 2) n.pm = true;
       if (b % 16 === 11) { n.hm = true; n.f = 12; }

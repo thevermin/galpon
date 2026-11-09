@@ -1333,20 +1333,28 @@
       // sustain: a ribbon along the lane at the string's height. A slide moves across to the fret it
       // goes to (like Rocksmith); vibrato makes the ribbon wavy, tremolo picking makes it zigzag.
       const slideTo = nt.sl > 0 ? nt.sl : nt.slu > 0 ? nt.slu : 0;
-      const sLen = sus >= 0.08 ? sus : slideTo ? 0.3 : 0;
+      const sLen = sus >= 0.08 ? sus : (slideTo || nt.bn) ? 0.35 : 0;
       if (sLen > 0) {
         const t0 = nt.t - now, t1 = nt.t + sLen - now;
         const zs = Math.max(0, t0), ze = Math.min(zFar, t1);
         if (ze > zs) {
           const half = open ? aWidth / 2 - 0.15 : 0.2;
           const Xt = slideTo ? slideTo - 0.5 : X;
-          const xAt = (zz) => X + (Xt - X) * Math.min(1, Math.max(0, (zz - t0) / Math.max(0.01, t1 - t0)));
-          const wav = nt.vb ? 0.08 : nt.tr ? 0.06 : 0, per = nt.tr ? 0.04 : 0.12;
-          const steps = wav || slideTo ? 18 : 1;
+          // a bend pushes the tail sideways (like the string being pushed), more for a bigger bend,
+          // in the first part of the note; then it holds there
+          const bendShift = nt.bn ? Math.min(1.6, 0.55 * nt.bn + 0.25) : 0;
+          const xAt = (zz) => {
+            const f = Math.min(1, Math.max(0, (zz - t0) / Math.max(0.01, t1 - t0)));
+            return X + (Xt - X) * f + bendShift * Math.min(1, f / 0.35);
+          };
+          // vibrato: a sawtooth tail; tremolo picking: a tight zigzag
+          const wav = nt.vb ? 0.14 : nt.tr ? 0.07 : 0, per = nt.tr ? 0.035 : 0.09;
+          const steps = wav ? Math.max(12, Math.round((ze - zs) / per * 2)) : slideTo || bendShift ? 18 : 1;
           const left = [], right = [];
           for (let k = 0; k <= steps; k++) {
             const zz = zs + (ze - zs) * k / steps;
-            const off = wav ? (nt.tr ? ((k % 2) ? wav : -wav) : wav * Math.sin((zz + now) / per * Math.PI)) : 0;
+            let off = 0;
+            if (wav) { const ph = ((zz + (nt.t - now < 0 ? 0 : 0)) / per) % 1; off = nt.tr ? ((k % 2) ? wav : -wav) : wav * (ph < 0.75 ? ph / 0.75 : (1 - ph) / 0.25); }
             left.push(P(xAt(zz) - half + off, Y, zz)); right.push(P(xAt(zz) + half + off, Y, zz));
           }
           ctx.globalAlpha = (mk && !mk.hit ? 0.25 : holding ? 0.9 : 0.55) * fade;
@@ -1414,15 +1422,14 @@
         if (nt.pm && !harmonic) { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(q[0] - g / 2 + 1, q[1] - g * 0.08, g - 2, g * 0.16); }
         if (muted && g > 10) { ctx.fillStyle = '#f2f2f3'; ctx.font = '700 ' + Math.round(g * 0.5) + 'px Inter, sans-serif'; ctx.fillText('✕', q[0], q[1] + 1); }
       }
-      // bend: an arrow going up, with how much
+      // bend: little arrows on the note, one for a half step, two for a whole one, three for more
       if (nt.bn && g > 8) {
-        const top = q[1] - g * 0.5 - 4, h2 = Math.max(10, g * 0.5);
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.5, g * 0.07);
-        ctx.beginPath(); ctx.moveTo(q[0] - g * 0.2, top); ctx.quadraticCurveTo(q[0] + g * 0.2, top, q[0] + g * 0.2, top - h2); ctx.stroke();
-        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(q[0] + g * 0.2, top - h2 - g * 0.16); ctx.lineTo(q[0] + g * 0.06, top - h2 + 2); ctx.lineTo(q[0] + g * 0.34, top - h2 + 2); ctx.closePath(); ctx.fill();
-        ctx.font = '700 ' + Math.round(Math.max(9, g * 0.32)) + 'px Inter, sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText(nt.bn === 0.5 ? '½' : nt.bn === 1.5 ? '1½' : String(nt.bn), q[0] + g * 0.36, top - h2 * 0.6);
-        ctx.textAlign = 'center';
+        const k = nt.bn <= 0.5 ? 1 : nt.bn <= 1 ? 2 : 3, cw = g * 0.32, ch = g * 0.16;
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.5, g * 0.08); ctx.lineJoin = 'round';
+        for (let j = 0; j < k; j++) {
+          const yy = q[1] - g * 0.5 - 5 - j * (ch + 3);
+          ctx.beginPath(); ctx.moveTo(q[0] - cw, yy); ctx.lineTo(q[0], yy - ch); ctx.lineTo(q[0] + cw, yy); ctx.stroke();
+        }
       }
       if (holding) {
         const done = (now - nt.t) / sus, q0 = P(X, Y, 0);
