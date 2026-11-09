@@ -596,8 +596,7 @@
     const seconds = clip.length * 60 / G.state.song.bpm;
 
     // Flex controls (like Logic's Flex Pitch / Flex Time)
-    const KEY_ES = { C: 'Do', 'C#': 'Do#', D: 'Re', 'D#': 'Re#', E: 'Mi', F: 'Fa', 'F#': 'Fa#', G: 'Sol', 'G#': 'Sol#', A: 'La', 'A#': 'La#', B: 'Si' };
-    const songKey = (KEY_ES[G.state.song.key] || G.state.song.key) + (G.state.song.minor ? ' menor' : ' mayor');
+    const songKey = G.chordLabel(G.state.song.key) + (G.state.song.minor ? ' menor' : ' mayor');
     const tune = el('input', { type: 'range', min: 0, max: 100, step: 5, value: Math.round(flex.tuneStrength * 100), 'aria-label': 'Cuánto afinar' });
     const tuneText = el('span.note', { text: tune.value + ' %' });
     tune.addEventListener('input', () => { tuneText.textContent = tune.value + ' %'; draw(); });
@@ -792,13 +791,23 @@
     }, 120);
     const set = (k, v) => { d[k] = v; push(); };
 
-    // Styles
-    const styles = el('div.drum-grid');
-    (G.lib.drummerStyles || []).forEach((s) => {
-      styles.appendChild(el('button.style-btn' + (s.id === d.style ? '.on' : ''), {
-        onclick: () => { d.style = s.id; G.call('setDrummer', { trackId: track.id, settings: d }); G.$$('.style-btn', styles).forEach((b) => b.classList.remove('on')); styles.children[(G.lib.drummerStyles || []).indexOf(s)].classList.add('on'); },
-      }, el('b', { text: s.name }), el('small', { text: `${s.who} · ${s.description}` })));
-    });
+    // Styles: a list by genre, like GarageBand (genre on the left, its drummers on the right)
+    const all = G.lib.drummerStyles || [];
+    const genres = [...new Set(all.map((x) => x.genre || 'Otros'))];
+    const current = all.find((x) => x.id === d.style) || all[0];
+    let genre = P.drumGenre || (current && current.genre) || genres[0];
+    const genreList = el('div.drum-genres', { role: 'listbox', 'aria-label': 'Género' });
+    const styleList = el('div.drum-styles', { role: 'listbox', 'aria-label': 'Baterista' });
+    const paintStyles = () => {
+      genreList.replaceChildren(...genres.map((g) => el('button.drum-genre' + (g === genre ? '.on' : '') + (current && current.genre === g ? '.has' : ''), {
+        role: 'option', 'aria-selected': String(g === genre), onclick: () => { genre = P.drumGenre = g; paintStyles(); } }, g)));
+      styleList.replaceChildren(...all.filter((x) => (x.genre || 'Otros') === genre).map((x) => el('button.drum-style' + (x.id === d.style ? '.on' : ''), {
+        role: 'option', 'aria-selected': String(x.id === d.style),
+        onclick: () => { d.style = x.id; G.call('setDrummer', { trackId: track.id, settings: d }); paintStyles(); },
+      }, el('b', { text: x.name }), el('small', { text: `${x.who} · ${x.description}` }))));
+    };
+    paintStyles();
+    const styles = el('div.drum-picker', null, genreList, styleList);
 
     // XY pad
     const puck = el('span.puck');
@@ -845,8 +854,8 @@
       : `Sigue las notas de "${listens[1]}" con el bombo.` });
     const relisten = el('button.btn', { title: 'Después de grabar, vuelve a escuchar la grabación y rehace la batería', onclick: () => G.run('setDrummer', { trackId: track.id, settings: d }) }, 'Volver a escuchar');
 
-    const left = el('div.stack', { style: { flex: '0 1 300px', minWidth: '260px' } },
-      el('div.row', null, el('b', { text: 'Estilo' }), el('span.note', { text: 'Cada baterista toca distinto.' })), styles);
+    const left = el('div.stack', { style: { flex: '0 1 420px', minWidth: '320px' } },
+      el('div.row', null, el('b', { text: 'Estilo' }), el('span.note', { text: current ? `Ahora: ${current.name} (${current.genre})` : '' })), styles);
 
     const mid = el('div.split', null, xy,
       el('div.stack', { style: { minWidth: '200px' } },

@@ -83,10 +83,10 @@
     const chords = G.state.chords || [];
     if (!chords.length) strip.appendChild(el('span.chord-empty', { text: 'Sin acordes todavía: toca "Identificar…" y Galpon los saca de lo que grabaste.' }));
     chords.forEach((c, i) => {
-      const chip = el('button.chord', { style: { left: c.beat * G.ppb + 1 + 'px', width: Math.max(14, c.length * G.ppb - 3) + 'px' }, title: `${c.name} (${c.en}) — clic para cambiarlo` }, c.name);
+      const chip = el('button.chord', { style: { left: c.beat * G.ppb + 1 + 'px', width: Math.max(14, c.length * G.ppb - 3) + 'px' }, title: `${G.chordText(c)} — clic para cambiarlo` }, G.chordText(c));
       chip.addEventListener('click', (e) => G.menu(e.clientX, e.clientY, [
         { label: 'Cambiar…', action: async () => {
-          const v = await G.prompt('Acorde (por ejemplo Lam, Sol7, F#m)', c.name);
+          const v = await G.prompt(G.namesEs() ? 'Acorde (por ejemplo Lam, Sol7, Fa#m)' : 'Acorde (por ejemplo Am, G7, F#m)', G.chordText(c));
           const p = T.parseChord(v);
           if (v && !p) { G.toast('No entendí ese acorde', true); return; }
           if (p) G.run('setChord', { index: i, root: p.root, quality: p.quality });

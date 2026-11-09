@@ -520,3 +520,23 @@ body.in-game #app { visibility: hidden; }
 .g-crash { max-height: 240px; overflow: auto; font-size: 11px; background: var(--deep); padding: 8px 10px; border-radius: 6px; white-space: pre-wrap; user-select: text; -webkit-user-select: text; }
 .g-quick { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 10px; border-radius: 8px; background: var(--raised); margin-bottom: 4px; }
 .g-quick .seg button { height: 26px; padding: 0 10px; font-size: 12px; }
+
+/* drummer: styles by genre */
+.drum-picker { display: grid; grid-template-columns: 140px 1fr; gap: 8px; height: 230px; }
+.drum-genres, .drum-styles { overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: #19191c; padding: 4px; display: flex; flex-direction: column; gap: 2px; }
+.drum-genre { text-align: left; padding: 7px 9px; border-radius: 6px; font-size: 12.5px; color: var(--muted); background: none; border: 0; position: relative; }
+.drum-genre:hover { background: #232327; color: var(--text); }
+.drum-genre.on { background: #2b2b30; color: var(--text); font-weight: 700; }
+.drum-genre.has::after { content: ''; position: absolute; right: 8px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); }
+.drum-style { text-align: left; padding: 7px 10px; border-radius: 6px; background: none; border: 1px solid transparent; display: flex; flex-direction: column; gap: 1px; }
+.drum-style b { font-size: 12.5px; color: var(--text); }
+.drum-style small { font-size: 11px; color: var(--muted); }
+.drum-style:hover { background: #232327; }
+.drum-style.on { background: #2a2418; border-color: #5a4422; }
+.drum-style.on b { color: var(--accent); }
+
+.radios { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.radio { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.radio:has(input:checked) { border-color: #5a4422; background: #221d16; }
+.radio span { display: flex; flex-direction: column; gap: 2px; }
+.radio small { color: var(--muted); font-size: 11.5px; }

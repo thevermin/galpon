@@ -35,7 +35,7 @@
   const colour = (s) => PALETTES[opts.palette][s] || '#ccc';
 
   // ------------------------------------------------------------------ tunings
-  const NOTE = ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];
+  const NOTE = new Proxy([], { get: (_, i) => (/^\d+$/.test(String(i)) ? G.pcName(+i) : undefined) });   // C D E… or Do Re Mi…
   const LETTER = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const GUITAR = [40, 45, 50, 55, 59, 64, 69, 74];     // E2 A2 D2 G3 B3 E4 (+ extra strings)
   const BASS = [28, 33, 38, 43, 48, 53];               // E1 A1 D2 G2 (+ C3 F3)
@@ -63,7 +63,7 @@
     else if (t[0] === -2 && t.slice(1).every((v) => v === 0)) name = 'Drop Re';
     else if (t[0] === -3 && t.slice(1).every((v) => v === -1)) name = 'Drop Do#';
     else if (t[0] === -4 && t.slice(1).every((v) => v === -2)) name = 'Drop Do';
-    else name = openPitches(Object.assign({}, arr, { capo: 0 })).map((p) => LETTER[p % 12]).join(' ');
+    else name = openPitches(Object.assign({}, arr, { capo: 0 })).map((p) => NOTE[p % 12]).join(' ');
     if (arr.capo) name += ' · cejilla ' + arr.capo;
     return name;
   }
@@ -237,7 +237,9 @@
   }
 
   /** The song's own guitar (or bass) at the level you left it last time. */
+  function applyDuck() { const db = store.get('duckDb', DUCK_MAX); G.call('gameDuck', { db: db >= DUCK_MAX ? 60 : db }); }
   function applyTheirGain() {
+    applyDuck();
     const g = store.get('theirGain', 1);
     if (!play || g === 1) return;
     const mine = isBass(play.arr) ? /bass|bajo/i : /guitar|guitarra|gtr/i;
@@ -253,7 +255,7 @@
     play.arr = a;
     play.strings = (a.tuning && a.tuning.length) || (isBass(a) ? 4 : 6);
     play.pitches = openPitches(a);
-    play.chordName = (cid) => { const t = (a.templates || [])[cid]; return t ? (t.displayName || t.name || '') : ''; };
+    play.chordName = (cid) => { const t = (a.templates || [])[cid]; return t ? G.chordLabel(t.name || t.displayName || '') : ''; };
     // a flat, time-sorted list of everything to draw; chord notes carry the chord's time
     const items = [];
     for (const n of a.notes || []) items.push(Object.assign({ chord: -1 }, n));
@@ -528,6 +530,8 @@
     return s;
   }
 
+  const DUCK_MAX = 18;   // dB: the slider's top is "as much as it needs", like before
+  const duckText = (db) => (db <= 0 ? 'Nada' : db >= DUCK_MAX ? 'Lo necesario' : 'Hasta ' + db + ' dB');
   function renderVolume() {
     const p = play;
     const rows = [];
@@ -584,6 +588,18 @@
           G.call('setTrack', { trackId: target(), volumeDb: d });
         }), txt, el('span')));
     } else rows.push(el('div.g-vrow', null, el('span.note', { text: 'Tu guitarra todavía no suena acá.' }), el('button.btn', { onclick: () => togglePanel('sound') }, 'Elegirla')));
+    // When you play loud on top of a loud song, the master's limiter lowers everything to keep it from
+    // clipping. This sets how far the song may go down (0 = it doesn't; it clips softly instead).
+    const duck = store.get('duckDb', DUCK_MAX);
+    const duckTxt = el('span.g-val', { text: duckText(duck) });
+    rows.push(el('div.g-vsep'));
+    rows.push(el('div.g-vrow', { title: 'Cuando tu guitarra y la canción juntas son muy fuertes, Galpon baja todo para que no distorsione. Elige cuánto puede bajar la canción.' },
+      el('span', { text: 'Cuánto baja la canción cuando tocas fuerte' }),
+      slider(duck / DUCK_MAX, 1, (v) => {
+        const db = Math.round(v * DUCK_MAX);
+        store.set('duckDb', db); duckTxt.textContent = duckText(db);
+        G.call('gameDuck', { db: db >= DUCK_MAX ? 60 : db });
+      }), duckTxt, el('span')));
     ui.panel.replaceChildren(el('div.g-panelhead', null, el('h3', { text: 'Volumen' }), el('button.icon-btn', { 'aria-label': 'Cerrar', onclick: () => togglePanel(null) }, G.icon('close', 14))),
       el('div.g-vrows', null, rows),
       instruments.length ? el('p.note', { text: 'Con todos los instrumentos al mismo volumen suena la grabación original; si cambias uno, se mezclan las pistas separadas.' }) : null);
@@ -790,7 +806,7 @@
         el('li', null, el('b', { text: 'El número es el traste.' }), ' 0 es la cuerda al aire.'),
         el('li', null, el('b', { text: 'Una barra larga detrás de la nota: mantenla' }), ' hasta que la barra termine de pasar la línea.'),
         el('li', null, el('b', { text: 'Recuadro dorado con nombre: acorde.' })),
-        el('li', null, el('b', { text: 'Letras arriba de la nota:' }), ' H ligado hacia arriba, P hacia abajo, ↑ bend, ↗ ↘ slide, PM palm mute, Arm. armónico, ✕ nota apagada.'),
+        el('li', null, el('b', { text: 'Tipos de nota:' }), ' hueca = ligado (hammer-on o pull-off: no la púas, la haces sonar con la mano izquierda); rombo = armónico; franja oscura = palm mute (apoya el canto de la mano derecha sobre las cuerdas, cerca del puente, para que suene apagado y seco); ✕ = nota muteada; flecha hacia arriba = bend (½ o 1 tono); cinta que cruza a otro traste = slide; cinta ondulada = vibrato.'),
         el('li', null, el('b', { text: 'Abajo, el diapasón' }), ' te muestra dónde poner la mano (zona dorada) y qué trastes vienen.'),
         el('li', null, el('b', { text: 'Vista 3D (botón 3D o tecla V):' }), ' el mástil en perspectiva, como Rocksmith, con la cuerda más grave arriba. Cada nota viene desde el fondo a la altura de su cuerda y por el carril de su traste; el carril se ilumina y el número de abajo te dice qué traste es. La zona dorada es donde va la mano. Con 2D+3D ves las dos cosas a la vez.')),
       el('div.row.end', null, el('button.btn.primary', { onclick: () => help.remove() }, 'Entendido')));
@@ -817,6 +833,7 @@
       body.append(
         el('h4', { text: 'Cómo se ve' }),
         el('div.g-optrow', null, el('label', { text: 'Vista' }), seg([['2d', 'Tablatura (2D)'], ['3d', 'Mástil en 3D, como Rocksmith'], ['both', 'Las dos a la vez']], opts.view, (v) => setView(v))),
+        el('div.g-optrow', null, el('label', { text: 'Notas y acordes' }), seg([['en', 'C D E (inglés)'], ['es', 'Do Re Mi']], G.namesEs() ? 'es' : 'en', (v) => { G.setNames(v); lyricKey = null; })),
         el('div.g-optrow', null, el('label', { text: 'Orden de las cuerdas' }),
           seg([['tab', 'Como tablatura (aguda arriba)'], ['rs', 'Como Rocksmith (grave arriba)']], opts.invert ? 'rs' : 'tab', (v) => { opts.invert = v === 'rs'; store.set('invert', opts.invert); })),
         el('div.g-optrow', null, el('label', { text: 'Colores de las cuerdas' }), seg([['classic', 'Clásicos'], ['soft', 'Suaves']], opts.palette, (v) => { opts.palette = v; store.set('palette', v); })),
@@ -1014,7 +1031,7 @@
       ctx.fillRect(34, y - thick / 2, w - 34, thick);
       ctx.globalAlpha = 1;
       ctx.font = '700 ' + Math.max(10, Math.round(laneH * 0.4)) + 'px Inter, system-ui, sans-serif';
-      ctx.fillText(LETTER[p.pitches[s] % 12].replace('#', '♯'), 16, y);
+      ctx.fillText(NOTE[p.pitches[s] % 12].replace('#', '♯'), 16, y);
     }
 
     // chord frames behind the notes
@@ -1102,11 +1119,15 @@
       const atLine = Math.abs(nt.t - now) < 0.06 || holding;
       ctx.globalAlpha = mk && !mk.hit ? 0.45 : 1;
       if (mk && mk.hit) { ctx.shadowColor = c; ctx.shadowBlur = 18; }
-      ctx.fillStyle = mk ? (mk.hit ? c : '#2a1d1d') : atLine ? c : '#1d1d21';
-      ctx.strokeStyle = mk && !mk.hit ? '#f87171' : c; ctx.lineWidth = 3;
-      roundRect(ctx, x - box / 2, y - box / 2, box, box, box * 0.25);
+      const hollow2 = (nt.ho || nt.po || nt.tp) && !mk && !atLine;
+      ctx.fillStyle = mk ? (mk.hit ? c : '#2a1d1d') : atLine ? c : hollow2 ? 'rgba(10,10,12,0.4)' : '#1d1d21';
+      ctx.strokeStyle = mk && !mk.hit ? '#f87171' : c; ctx.lineWidth = hollow2 ? 4 : 3;
+      if (nt.hm || nt.hp) {
+        ctx.beginPath(); ctx.moveTo(x, y - box * 0.62); ctx.lineTo(x + box * 0.62, y); ctx.lineTo(x, y + box * 0.62); ctx.lineTo(x - box * 0.62, y); ctx.closePath();
+      } else roundRect(ctx, x - box / 2, y - box / 2, box, box, box * 0.25);
       ctx.fill(); ctx.stroke();
       ctx.shadowBlur = 0;
+      if (nt.pm) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x - box / 2 + 2, y + box * 0.22, box - 4, box * 0.16); }
       if (nt.ac) { ctx.lineWidth = 1.5; roundRect(ctx, x - box / 2 - 4, y - box / 2 - 4, box + 8, box + 8, box * 0.3); ctx.stroke(); }
       ctx.fillStyle = (mk && mk.hit) || (!mk && atLine) ? '#111' : '#f2f2f3';
       ctx.font = '700 ' + Math.round(box * 0.5) + 'px "Space Grotesk", Inter, sans-serif';
@@ -1206,11 +1227,18 @@
     const fMin = Math.max(0, Math.floor(cam.x - span * 0.85)), fMax = Math.min(24, Math.ceil(cam.x + span * 0.6));
 
     // ---- background, floor, the hand's zone
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, '#0b0b0e'); grad.addColorStop(0.55, '#141215'); grad.addColorStop(1, '#1e1913');
-    ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
-    floorQuad(fMin, fMax, -0.15, zFar, '#1f1a15');
-    floorQuad(aFret - 1, aFret - 1 + aWidth, -0.15, zFar, 'rgba(230,168,74,0.10)');
+    // a dark stage: almost black, with a faint glow where the notes come from
+    ctx.fillStyle = '#050507'; ctx.fillRect(0, 0, w, h);
+    const far = P(cam.x, 0, zFar);
+    const glow = ctx.createRadialGradient(far[0], far[1], 0, far[0], far[1], Math.max(w, h) * 0.7);
+    glow.addColorStop(0, 'rgba(70,52,30,0.35)'); glow.addColorStop(0.5, 'rgba(25,20,16,0.2)'); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+    // the floor: dark, lighter close to you
+    const n0 = P(cam.x, 0, -0.15), n1 = P(cam.x, 0, zFar);
+    const fg = ctx.createLinearGradient(n0[0], n0[1], n1[0], n1[1]);
+    fg.addColorStop(0, '#17140f'); fg.addColorStop(1, '#0a0909');
+    floorQuad(fMin, fMax, -0.15, zFar, fg);
+    floorQuad(aFret - 1, aFret - 1 + aWidth, -0.15, zFar, 'rgba(230,168,74,0.07)');
     if (p.loop) {
       const z0 = Math.max(0, p.loop.a - now), z1 = Math.min(zFar, p.loop.b - now);
       if (z1 > z0) floorQuad(fMin, fMax, z0, z1, 'rgba(230,168,74,0.05)');
@@ -1228,7 +1256,7 @@
       const inZone = f >= aFret - 1 && f <= aFret - 1 + aWidth;
       const a = P(f, 0, -0.15), b = P(f, 0, zFar);
       const lg = ctx.createLinearGradient(a[0], a[1], b[0], b[1]);
-      lg.addColorStop(0, inZone ? 'rgba(243,199,126,0.5)' : 'rgba(200,190,175,0.22)'); lg.addColorStop(1, 'rgba(200,190,175,0)');
+      lg.addColorStop(0, inZone ? 'rgba(243,199,126,0.42)' : 'rgba(200,190,175,0.14)'); lg.addColorStop(1, 'rgba(200,190,175,0)');
       ctx.strokeStyle = lg; ctx.lineWidth = f === 0 ? 3 : 1.4;
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
@@ -1302,13 +1330,35 @@
       const X = open ? aFret - 1 + aWidth / 2 : (nt.f | 0) - 0.5;
       const Y = hOf(str);
       const fade = Math.min(1, (zFar - z) / (zFar * 0.25));
-      // sustain: a ribbon along the lane at the string's height
-      if (sus >= 0.08) {
-        const zs = Math.max(0, nt.t - now), ze = Math.min(zFar, nt.t + sus - now);
+      // sustain: a ribbon along the lane at the string's height. A slide moves across to the fret it
+      // goes to (like Rocksmith); vibrato makes the ribbon wavy, tremolo picking makes it zigzag.
+      const slideTo = nt.sl > 0 ? nt.sl : nt.slu > 0 ? nt.slu : 0;
+      const sLen = sus >= 0.08 ? sus : slideTo ? 0.3 : 0;
+      if (sLen > 0) {
+        const t0 = nt.t - now, t1 = nt.t + sLen - now;
+        const zs = Math.max(0, t0), ze = Math.min(zFar, t1);
         if (ze > zs) {
           const half = open ? aWidth / 2 - 0.15 : 0.2;
+          const Xt = slideTo ? slideTo - 0.5 : X;
+          const xAt = (zz) => X + (Xt - X) * Math.min(1, Math.max(0, (zz - t0) / Math.max(0.01, t1 - t0)));
+          const wav = nt.vb ? 0.08 : nt.tr ? 0.06 : 0, per = nt.tr ? 0.04 : 0.12;
+          const steps = wav || slideTo ? 18 : 1;
+          const left = [], right = [];
+          for (let k = 0; k <= steps; k++) {
+            const zz = zs + (ze - zs) * k / steps;
+            const off = wav ? (nt.tr ? ((k % 2) ? wav : -wav) : wav * Math.sin((zz + now) / per * Math.PI)) : 0;
+            left.push(P(xAt(zz) - half + off, Y, zz)); right.push(P(xAt(zz) + half + off, Y, zz));
+          }
           ctx.globalAlpha = (mk && !mk.hit ? 0.25 : holding ? 0.9 : 0.55) * fade;
-          poly([P(X - half, Y, zs), P(X + half, Y, zs), P(X + half, Y, ze), P(X - half, Y, ze)], c);
+          poly(left.concat(right.reverse()), c);
+          if (slideTo) {
+            // an arrow at the end and the fret it lands on
+            const e = P(Xt, Y, ze), e0 = P(xAt(ze - 0.05), Y, ze - 0.05);
+            const ang = Math.atan2(e[1] - e0[1], e[0] - e0[0]), al = Math.max(6, e[2] * 0.12);
+            ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(e[0] + Math.cos(ang) * al, e[1] + Math.sin(ang) * al);
+            ctx.lineTo(e[0] + Math.cos(ang + 2.4) * al, e[1] + Math.sin(ang + 2.4) * al); ctx.lineTo(e[0] + Math.cos(ang - 2.4) * al, e[1] + Math.sin(ang - 2.4) * al); ctx.closePath(); ctx.fill();
+            if (nt.sl > 0) { ctx.globalAlpha = fade; ctx.fillStyle = '#fff'; ctx.font = '700 ' + Math.max(10, Math.round(e[2] * 0.13)) + 'px "Space Grotesk", Inter, sans-serif'; ctx.fillText(String(nt.sl), e[0], e[1] - al - 6); }
+          }
           ctx.globalAlpha = 1;
         }
       }
@@ -1330,30 +1380,56 @@
       const fq = P(X, 0, z);
       ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, g * 0.08);
       ctx.beginPath(); ctx.moveTo(q[0], q[1]); ctx.lineTo(fq[0], fq[1]); ctx.stroke();
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
       ctx.beginPath(); ctx.ellipse(fq[0], fq[1], open ? Math.abs(P(aFret - 1 + aWidth, 0, z)[0] - P(aFret - 1, 0, z)[0]) / 2 : g * 0.55, g * 0.14 + 1, 0, 0, 7); ctx.fill();
+      // the fret number on the floor, under the note (like Rocksmith); at the neck, the neck's number says it
+      if (g > 7 && z > 0.18) {
+        ctx.fillStyle = '#f4efe6'; ctx.font = '700 ' + Math.round(Math.max(9, g * 0.46)) + 'px "Space Grotesk", Inter, sans-serif';
+        ctx.fillText(String(nt.f | 0), fq[0], fq[1] + g * 0.42 + 4);
+      }
+      const hollow = nt.ho || nt.po || nt.tp;              // hammer-on, pull-off, tap: you don't pick it
+      const harmonic = nt.hm || nt.hp;
+      const muted = nt.mt || nt.fhm;
       if (open) {
         // open string: a bar across the hand's zone
         const a = P(aFret - 1 + 0.1, Y, z), b = P(aFret - 1 + aWidth - 0.1, Y, z);
-        ctx.fillStyle = mk && mk.hit ? c : 'rgba(29,29,33,0.9)'; ctx.strokeStyle = c; ctx.lineWidth = Math.max(1.5, g * 0.12);
+        ctx.fillStyle = mk && mk.hit ? c : hollow ? 'rgba(10,10,12,0.25)' : 'rgba(29,29,33,0.9)'; ctx.strokeStyle = c; ctx.lineWidth = Math.max(1.5, g * 0.12);
         ctx.beginPath(); ctx.moveTo(a[0], a[1] - g * 0.22); ctx.lineTo(b[0], b[1] - g * 0.22); ctx.lineTo(b[0], b[1] + g * 0.22); ctx.lineTo(a[0], a[1] + g * 0.22); ctx.closePath();
         ctx.fill(); ctx.stroke();
+        if (nt.pm) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(Math.min(a[0], b[0]), a[1] - g * 0.06, Math.abs(b[0] - a[0]), g * 0.12); }
       } else {
         if (mk && mk.hit) { ctx.shadowColor = c; ctx.shadowBlur = 16; }
         // a gem in the string's colour, lighter on top like it has volume
         const gg = ctx.createLinearGradient(q[0], q[1] - g / 2, q[0], q[1] + g / 2);
         gg.addColorStop(0, mk && !mk.hit ? '#3a2323' : c); gg.addColorStop(1, mk && !mk.hit ? '#2a1d1d' : 'rgba(20,20,24,0.95)');
-        ctx.fillStyle = mk && mk.hit ? c : gg; ctx.strokeStyle = mk && !mk.hit ? '#f87171' : c; ctx.lineWidth = Math.max(1.5, g * 0.1);
-        roundRect(ctx, q[0] - g / 2, q[1] - g * 0.42, g, g * 0.84, g * 0.25); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = mk && mk.hit ? c : hollow ? 'rgba(10,10,12,0.3)' : gg;
+        ctx.strokeStyle = mk && !mk.hit ? '#f87171' : c; ctx.lineWidth = Math.max(1.5, g * (hollow ? 0.14 : 0.1));
+        if (harmonic) {
+          // harmonic: a diamond
+          ctx.beginPath(); ctx.moveTo(q[0], q[1] - g * 0.55); ctx.lineTo(q[0] + g * 0.55, q[1]); ctx.lineTo(q[0], q[1] + g * 0.55); ctx.lineTo(q[0] - g * 0.55, q[1]); ctx.closePath();
+        } else roundRect(ctx, q[0] - g / 2, q[1] - g * 0.42, g, g * 0.84, g * 0.25);
+        ctx.fill(); ctx.stroke();
         ctx.shadowBlur = 0;
-        if (nt.mt && g > 10) { ctx.fillStyle = '#f2f2f3'; ctx.font = '700 ' + Math.round(g * 0.5) + 'px Inter, sans-serif'; ctx.fillText('✕', q[0], q[1] + 1); }
+        // palm mute: a dark band across (the note sounds dampened)
+        if (nt.pm && !harmonic) { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(q[0] - g / 2 + 1, q[1] - g * 0.08, g - 2, g * 0.16); }
+        if (muted && g > 10) { ctx.fillStyle = '#f2f2f3'; ctx.font = '700 ' + Math.round(g * 0.5) + 'px Inter, sans-serif'; ctx.fillText('✕', q[0], q[1] + 1); }
+      }
+      // bend: an arrow going up, with how much
+      if (nt.bn && g > 8) {
+        const top = q[1] - g * 0.5 - 4, h2 = Math.max(10, g * 0.5);
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.5, g * 0.07);
+        ctx.beginPath(); ctx.moveTo(q[0] - g * 0.2, top); ctx.quadraticCurveTo(q[0] + g * 0.2, top, q[0] + g * 0.2, top - h2); ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(q[0] + g * 0.2, top - h2 - g * 0.16); ctx.lineTo(q[0] + g * 0.06, top - h2 + 2); ctx.lineTo(q[0] + g * 0.34, top - h2 + 2); ctx.closePath(); ctx.fill();
+        ctx.font = '700 ' + Math.round(Math.max(9, g * 0.32)) + 'px Inter, sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText(nt.bn === 0.5 ? '½' : nt.bn === 1.5 ? '1½' : String(nt.bn), q[0] + g * 0.36, top - h2 * 0.6);
+        ctx.textAlign = 'center';
       }
       if (holding) {
         const done = (now - nt.t) / sus, q0 = P(X, Y, 0);
         ctx.strokeStyle = c; ctx.lineWidth = 4;
         ctx.beginPath(); ctx.arc(q0[0], q0[1], gemSize(q0) * 0.75, -Math.PI / 2, -Math.PI / 2 + done * Math.PI * 2); ctx.stroke();
       }
-      const tag = techTag(nt);
+      const tag = [nt.slp ? 'Slap' : '', nt.plk ? 'Pop' : ''].filter(Boolean).join(' ');
       if (tag && g > 16) {
         ctx.font = '700 ' + Math.max(9, Math.round(g * 0.3)) + 'px Inter, system-ui, sans-serif';
         const tw = ctx.measureText(tag).width + 8, th = Math.max(12, Math.round(g * 0.34));
@@ -1366,7 +1442,7 @@
     for (const i of list) if (!arriving(i)) drawNote(i);
     // ---- the neck where the notes land: strings across, fret wires, dots, numbers
     const nut = P(fMin, 0, 0), end = P(fMax, 0, 0);
-    poly([P(fMin, -0.02, 0), P(fMax, -0.02, 0), P(fMax, n * strGap + strGap * 0.6, 0), P(fMin, n * strGap + strGap * 0.6, 0)], 'rgba(40,32,24,0.55)');
+    poly([P(fMin, -0.02, 0), P(fMax, -0.02, 0), P(fMax, n * strGap + strGap * 0.6, 0), P(fMin, n * strGap + strGap * 0.6, 0)], 'rgba(22,17,12,0.6)');
     void nut; void end;
     for (let f = fMin; f <= fMax; f++) {
       const a = P(f, 0, 0), b = P(f, n * strGap + strGap * 0.4, 0);
@@ -1398,7 +1474,7 @@
     }
     // string names at the left of the neck
     ctx.font = '700 12px Inter, system-ui, sans-serif'; ctx.textAlign = 'right';
-    for (let str = 0; str < n; str++) { const q = P(fMin - 0.35, hOf(str), 0); ctx.fillStyle = colour(str); ctx.fillText(LETTER[p.pitches[str] % 12], q[0] - 4, q[1]); }
+    for (let str = 0; str < n; str++) { const q = P(fMin - 0.35, hOf(str), 0); ctx.fillStyle = colour(str); ctx.fillText(NOTE[p.pitches[str] % 12], q[0] - 4, q[1]); }
     ctx.textAlign = 'center';
 
     for (const i of list) if (arriving(i)) drawNote(i);
@@ -1449,12 +1525,7 @@
     if (n.bn) t.push('↑' + (n.bn === 0.5 ? '½' : n.bn === 1.5 ? '1½' : String(n.bn)));
     if (n.sl > 0) t.push('↗' + n.sl);
     if (n.slu > 0) t.push('↘' + n.slu);
-    if (n.ho) t.push('H');
-    if (n.po) t.push('P');
-    if (n.tp) t.push('T');
-    if (n.hm) t.push('Arm.');
-    if (n.hp) t.push('A.Art.');
-    if (n.pm) t.push('PM');
+    // hammer-ons, pull-offs and taps (hollow), harmonics (diamond) and palm mute (dark band) are drawn, not written
     if (n.fhm) t.push('✕');
     if (n.slp) t.push('Slap');
     if (n.plk) t.push('Pop');

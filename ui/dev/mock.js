@@ -18,7 +18,12 @@
       { name: 'Pad nocturno', type: 'synth', group: 'Sintes' }, { name: 'Bajo eléctrico', type: 'synth', group: 'Bajos' },
       { name: 'Batería acústica', type: 'drums', group: 'Batería' }],
     effects: [['eq', 'Ecualizador'], ['comp', 'Compresor'], ['gate', 'Puerta de ruido'], ['drive', 'Distorsión'], ['amp', 'Amplificador'], ['nam', 'Amp NAM (Tone3000)'], ['cab', 'Gabinete (IR)'], ['chorus', 'Chorus'], ['delay', 'Delay'], ['reverb', 'Reverb']].map(([type, name]) => ({ type, name })),
-    drummerStyles: [['rock', 'Rock de garage', 'Tomás', 'Directo y fuerte'], ['pop', 'Pop', 'Lucía', 'Prolijo y bailable'], ['funk', 'Funk', 'Nico', 'Mucho groove'], ['cuarteto', 'Cuarteto', 'Ramiro', 'Tunga-tunga cordobés'], ['lofi', 'Lo-fi', 'Sol', 'Relajado'], ['reggaeton', 'Reggaetón', 'Fede', 'Dembow'], ['jazz', 'Jazz suave', 'Ana', 'Escobillas'], ['electronic', 'Electrónica', 'Max', 'Caja de ritmos']].map(([id, name, who, description]) => ({ id, name, who, description })),
+    drummerStyles: [['rock', 'Rock de garage', 'Tomás', 'Directo y fuerte', 'Rock'], ['punk', 'Punk', 'Juancho', 'Rápido y sin frenos', 'Rock'], ['grunge', 'Grunge', 'Leo', 'Charles medio abierto', 'Rock'],
+      ['heavymetal', 'Heavy metal', 'Bruno', 'Galope y ride', 'Metal'], ['thrash', 'Thrash', 'Sole', 'Skank veloz', 'Metal'], ['deathmetal', 'Death metal', 'Rafa', 'Blast beat', 'Metal'],
+      ['pop', 'Pop', 'Lucía', 'Prolijo y bailable', 'Pop'], ['ballad', 'Balada', 'Inés', 'Suave', 'Pop'], ['funk', 'Funk', 'Nico', 'Mucho groove', 'Funk y soul'],
+      ['trap', 'Trap', 'Lauti', 'Charles con redobles', 'Hip hop y electrónica'], ['lofi', 'Lo-fi', 'Sol', 'Relajado', 'Hip hop y electrónica'],
+      ['cuarteto', 'Cuarteto', 'Ramiro', 'Tunga-tunga cordobés', 'Latino'], ['cumbia', 'Cumbia', 'Nahuel', 'Güira y aro', 'Latino'], ['jazz', 'Jazz suave', 'Ana', 'Escobillas', 'Jazz y blues']]
+      .map(([id, name, who, description, genre]) => ({ id, name, who, description, genre })),
     loops: [['drums-funk', 'Groove funky', 'Batería'], ['bass-walk', 'Bajo caminante', 'Bajo'], ['keys-pop', 'Acordes pop', 'Teclados'], ['pad-night', 'Pad nocturno', 'Teclados'], ['synth-arp', 'Arpegio brillante', 'Sintes']].map(([id, name, category]) => ({ id, name, category, length: 8, colour: '#60A5FA' })),
     plugins: [{ id: 'au1', name: 'Neural Amp Modeler', maker: 'Steven Atkinson', format: 'AudioUnit', instrument: false }, { id: 'au2', name: 'Vital', maker: 'Vital Audio', format: 'VST3', instrument: true }],
     pluginStatus: { scanning: false, progress: 1, current: '', count: 2, formats: 'AudioUnit, VST3' },
@@ -110,6 +115,8 @@
       if (b % 16 === 9) n.bn = 1;
       if (b % 16 === 13) { n.sl = n.f + 2; n.sus = 0.4; }
       if (b % 12 === 2) n.pm = true;
+      if (b % 16 === 11) { n.hm = true; n.f = 12; }
+      if (b % 16 === 3) { n.vb = true; n.sus = 0.8; }
       notes.push(n);
     }
     anchors.push({ time: 0, fret: 1, width: 4 }, { time: 44, fret: 5, width: 4 });

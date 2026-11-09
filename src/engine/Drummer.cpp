@@ -23,152 +23,223 @@ namespace gm
                   tamb = 54, cowbell = 56, shaker = 70;
 }
 
+namespace
+{
+    using Pattern = std::array<float, 16>;   // probability per 16th note of a 4/4 bar
+
+    // One drummer style, written the way a drummer would chart it: one character per 16th note of a
+    // 4/4 bar. Kick and snare: X = always, x = often, o = sometimes (on the snare: a ghost note).
+    // Hats: x closed, X closed accented, o open, r ride, R ride accented, b ride bell, c crash,
+    // p hi-hat foot, g soft closed. "S" is the simple version, "C" the complex one (the X/Y pad).
+    struct StyleDef
+    {
+        const char* id; const char* name; const char* genre; const char* who; const char* desc;
+        const char* kickS; const char* kickC; const char* snareS; const char* snareC;
+        const char* hatS; const char* hatC; const char* perc;
+        int   snareNote, percNote;
+        float swing, laidBack, machine, vel;   // vel: how hard it hits (1 = medium; rock and metal hit hard)
+        unsigned flags;
+    };
+    enum : unsigned { RideLoud = 1, JazzRide = 2, Clap = 4, NoHalfTime = 8, DoubleKick = 16, Blast = 32, TrapRolls = 64, UpbeatHats = 128 };
+
+    //                                    1   e   &   a   2   e   &   a   3   e   &   a   4   e   &   a
+    // (plain UTF-8 text: read with juce::String::fromUTF8)
+    const StyleDef styleDefs[] = {
+        // ---- Rock
+        { "rock", "Rock de garage", "Rock", "Tomás", "Directo y fuerte",
+          "X.......X.......", "X......xX.x...o.", "....X.......X...", "....X..o.o..X..o",
+          "X.x.X.x.X.x.X.x.", "X.x.X.x.X.x.X.o.", "....X.......X...", gm::snare, gm::tamb, 0, 0.3f, 0, 1.18f, RideLoud },
+        { "classicrock", "Rock clásico", "Rock", "Beto", "Groove de los 70, con aire",
+          "X.......X.x.....", "X.x.....X.x...x.", "....X.......X...", "....X..o....X..o",
+          "X.x.X.x.X.x.X.x.", "XxxxXxxxXxxxXxxx", "................", gm::snare, gm::tamb, 0, 0.45f, 0, 1.12f, RideLoud },
+        { "hardrock", "Hard rock", "Rock", "Vicky", "Pesado, con ride y platillos",
+          "X.....x.X.x.....", "X.x...x.X.x...x.", "....X.......X...", "....X.......X..o",
+          "X.x.X.x.X.x.X.x.", "R.r.R.r.R.r.R.r.", "................", gm::snare, gm::tamb, 0, 0.35f, 0, 1.24f, RideLoud },
+        { "punk", "Punk", "Rock", "Juancho", "Rápido y sin frenos",
+          "X...X...X...X...", "X.X.X...X.X.X.x.", "..X...X...X...X.", "..X...X...X...X.",
+          "X.X.X.X.X.X.X.X.", "c.X.X.X.c.X.X.X.", "................", gm::snare, gm::tamb, 0, 0.05f, 0, 1.25f, RideLoud | NoHalfTime },
+        { "poppunk", "Pop punk", "Rock", "Mica", "Enérgico, con bombo en corcheas",
+          "X.x.....X.x.....", "X.x...x.X.x.x...", "....X.......X...", "....X......xX...",
+          "X.X.X.X.X.X.X.X.", "R.R.R.R.R.R.R.R.", "................", gm::snare, gm::tamb, 0, 0.1f, 0, 1.22f, RideLoud },
+        { "grunge", "Grunge", "Rock", "Leo", "Charles medio abierto, golpe pesado",
+          "X.......X.x.....", "X.....x.X.x...x.", "....X.......X...", "....X.......X..o",
+          "o.x.o.x.o.x.o.x.", "o.x.o.x.o.x.o.x.", "................", gm::snare, gm::tamb, 0, 0.55f, 0, 1.22f, RideLoud },
+        { "indie", "Indie rock", "Rock", "Paz", "Charles en semicorcheas, bombo que se mueve",
+          "X..x..x.X.......", "X..x..x.X.x..x..", "....X.......X...", "....X..o....X...",
+          "xgxgxgxgxgxgxgxg", "XxxxXxxxXxxxXxxx", "................", gm::snare, gm::tamb, 0, 0.25f, 0, 1.08f, RideLoud },
+
+        // ---- Metal
+        { "heavymetal", "Heavy metal", "Metal", "Bruno", "Galope y ride",
+          "X.xxX.xxX.xxX.xx", "X.xxX.xxX.xxX.xx", "....X.......X...", "....X.......X...",
+          "R.r.R.r.R.r.R.r.", "c.r.R.r.c.r.R.r.", "................", gm::snare, gm::tamb, 0, 0.05f, 0.1f, 1.28f, RideLoud | NoHalfTime },
+        { "thrash", "Thrash", "Metal", "Sole", "Skank veloz; complejo: doble bombo",
+          "X...X...X...X...", "XXXXXXXXXXXXXXXX", "..X...X...X...X.", "....X.......X...",
+          "c.x.c.x.c.x.c.x.", "R.R.R.R.R.R.R.R.", "................", gm::snare, gm::tamb, 0, 0, 0.15f, 1.3f, RideLoud | NoHalfTime | DoubleKick },
+        { "modernmetal", "Metal moderno", "Metal", "Ivo", "Medio tiempo pesado con ráfagas de doble bombo",
+          "X..X..X...X.X...", "XXXX..X.XXXX..X.", "........X.......", "........X.......",
+          "c...c...c...c...", "c.r.c.r.c.r.c.r.", "................", gm::snare, gm::tamb, 0, 0, 0.25f, 1.3f, RideLoud | NoHalfTime | DoubleKick },
+        { "deathmetal", "Death metal", "Metal", "Rafa", "Doble bombo; complejo: blast beat",
+          "XXXXXXXXXXXXXXXX", "XXXXXXXXXXXXXXXX", "....X.......X...", "....X.......X...",
+          "R.R.R.R.R.R.R.R.", "c.c.c.c.c.c.c.c.", "................", gm::snare, gm::tamb, 0, 0, 0.3f, 1.3f, RideLoud | NoHalfTime | Blast },
+        { "metalcore", "Metalcore", "Metal", "Tefi", "Breakdowns: bombo con la guitarra, caja en el 3",
+          "X..X..X.X..X..X.", "X..XX.X.X..XX.X.", "........X.......", "....X.......X...",
+          "c...c...c...c...", "c.x.c.x.c.x.c.x.", "................", gm::snare, gm::tamb, 0, 0, 0.25f, 1.3f, RideLoud | NoHalfTime },
+        { "doom", "Doom / stoner", "Metal", "Gonzalo", "Lento, enorme",
+          "X.......X.x.....", "X.....x.X.x.....", "........X.......", "........X......o",
+          "R...R...R...R...", "R.r.R.r.R.r.R.r.", "................", gm::snare, gm::tamb, 0, 0.8f, 0, 1.22f, RideLoud | NoHalfTime },
+
+        // ---- Pop
+        { "pop", "Pop", "Pop", "Lucía", "Prolijo y bailable",
+          "X.......X.......", "X..x..x.X.x...x.", "....X.......X...", "....X..o....X..o",
+          "X.x.X.x.X.x.X.x.", "XgxgXgxgXgxgXgxg", "....X.......X...", gm::snare, gm::tamb, 0, 0.15f, 0.2f, 1.1f, Clap | UpbeatHats },
+        { "poprock", "Pop rock", "Pop", "Santi", "Para cantar arriba",
+          "X.....x.X.x.....", "X.x...x.X.x...x.", "....X.......X...", "....X.......X..o",
+          "X.x.X.x.X.x.X.x.", "X.x.X.x.X.x.X.o.", "....X.......X...", gm::snare, gm::tamb, 0, 0.25f, 0, 1.14f, RideLoud },
+        { "dancepop", "Dance pop", "Pop", "Caro", "Bombo en negras, charles abierto en el contratiempo",
+          "X...X...X...X...", "X...X...X...X..x", "....X.......X...", "....X.......X..o",
+          "..o...o...o...o.", "xxoxxxoxxxoxxxox", "..x...x...x...x.", gm::snare, gm::shaker, 0, 0.05f, 0.5f, 1.1f, Clap | NoHalfTime },
+        { "ballad", "Balada", "Pop", "Inés", "Suave, con aro en la caja",
+          "X.......X.......", "X......xX.......", "....X.......X...", "....X.......X...",
+          "x.x.x.x.x.x.x.x.", "r.r.r.r.r.r.r.r.", "................", gm::rim, gm::tamb, 0, 0.5f, 0, 0.85f, 0 },
+
+        // ---- Funk y soul
+        { "funk", "Funk", "Funk y soul", "Nico", "Mucho groove y notas fantasma",
+          "X.........X.....", "X..x..x...X..x..", "....X.......X...", ".o.oX.oo.o.oX.oo",
+          "XxxxXxxxXxxxXxxx", "XxxxXxxoXxxxXxxo", "X.....X...X.....", gm::snare, gm::cowbell, 0, 0, 0, 1.08f, NoHalfTime },
+        { "motown", "Soul / Motown", "Funk y soul", "Rita", "Caja en todos los tiempos, pandereta",
+          "X.x...x.X.x...x.", "X.x...x.X.x...xx", "X...X...X...X...", "X...X...X...X..o",
+          "X.x.X.x.X.x.X.x.", "X.x.X.x.X.x.X.x.", "....X.......X...", gm::snare, gm::tamb, 0, 0.3f, 0, 1.0f, NoHalfTime },
+        { "disco", "Disco", "Funk y soul", "Dani", "Bombo en negras y charles que se abre",
+          "X...X...X...X...", "X...X...X..xX...", "....X.......X...", "....X..o....X...",
+          "x.o.x.o.x.o.x.o.", "xxoxxxoxxxoxxxox", "................", gm::snare, gm::tamb, 0, 0.1f, 0.2f, 1.05f, NoHalfTime | UpbeatHats },
+        { "neosoul", "R&B / neo soul", "Funk y soul", "Kiara", "Arrastrado y suave",
+          "X......x..X.....", "X......x..X..x..", "....X.......X...", "....X..o....X..o",
+          "x.x.x.x.x.x.x.x.", "xgxgxgxgxgxgxgxg", "................", gm::snare, gm::shaker, 0.35f, 0.9f, 0, 0.95f, Clap },
+
+        // ---- Hip hop y electrónica
+        { "boombap", "Hip hop boom bap", "Hip hop y electrónica", "Mati", "Pesado y con swing",
+          "X......xX.x.....", "X......xX.x...x.", "....X.......X...", "....X.......X..o",
+          "x.x.x.x.x.x.x.x.", "xgxgxgxgxgxgxgxg", "................", gm::snare, gm::shaker, 0.3f, 0.6f, 0.3f, 1.1f, NoHalfTime },
+        { "trap", "Trap", "Hip hop y electrónica", "Lauti", "Caja en el 3 y charles con redobles",
+          "X.....x...X.....", "X.....x...X..x..", "........X.......", "........X.......",
+          "xxxxxxxxxxxxxxxx", "xxxxxxxxxxxxxxxx", "................", gm::clap, gm::shaker, 0, 0, 0.8f, 1.1f, NoHalfTime | TrapRolls },
+        { "lofi", "Lo-fi", "Hip hop y electrónica", "Sol", "Relajado, con swing",
+          "X.........X.....", "X......x..X...x.", "....X.......X...", "....X..o....X.o.",
+          "x.x.x.x.x.x.x.x.", "xgxgxgxgxgxgxgxg", "..x...x...x...x.", gm::snare, gm::shaker, 0.45f, 0.9f, 0.2f, 0.9f, 0 },
+        { "electronic", "House / electrónica", "Hip hop y electrónica", "Max", "Bombo en negras, caja de ritmos",
+          "X...X...X...X...", "X...X...X...X..x", "....X.......X...", "....X.......X..x",
+          "..o...o...o...o.", "xxoxxxoxxxoxxxox", ".x.x.x.x.x.x.x.x", gm::clap, gm::shaker, 0, 0, 1.0f, 1.05f, NoHalfTime | UpbeatHats },
+        { "dnb", "Drum and bass", "Hip hop y electrónica", "Fran", "Rápido y quebrado",
+          "X.........X.....", "X.........X.x...", "....X.......X...", "....X..o.o..X..o",
+          "x.x.x.x.x.x.x.x.", "xxxxxxxxxxxxxxxx", "................", gm::snare, gm::shaker, 0, 0, 0.7f, 1.1f, NoHalfTime },
+        { "reggaeton", "Reggaetón", "Hip hop y electrónica", "Fede", "Dembow",
+          "X...X...X...X...", "X...X...X...X...", "...X..X....X..X.", "...X..X.o..X.oX.",
+          "x.x.x.x.x.x.x.x.", "xxxxxxxxxxxxxxxx", "..x...x...x...x.", gm::snare, gm::shaker, 0, 0, 0.6f, 1.08f, Clap | NoHalfTime },
+
+        // ---- Latino
+        { "cuarteto", "Cuarteto", "Latino", "Ramiro", "Tunga-tunga cordobés",
+          "X...X...X...X...", "X..oX..oX..oX..o", "..X...X...X...X.", "..Xo..Xo..Xo..Xo",
+          "................", "................", "XXXXXXXXXXXXXXXX", gm::rim, gm::shaker, 0, 0, 0, 1.05f, NoHalfTime },
+        { "cumbia", "Cumbia", "Latino", "Nahuel", "Güira y aro en el contratiempo",
+          "X.......X.......", "X......xX......x", "..x...x...x...x.", "..X...X...X...X.",
+          "x.x.x.x.x.x.x.x.", "xgxgxgxgxgxgxgxg", "XxxxXxxxXxxxXxxx", gm::rim, gm::shaker, 0, 0, 0, 1.0f, NoHalfTime },
+        { "bossa", "Bossa nova", "Latino", "Lucas", "Bombo suave y clave en el aro",
+          "X..xX..xX..xX..x", "X..xX..xX..xX..x", "X..X..X...X..X..", "X..X..X...X..X..",
+          "x.x.x.x.x.x.x.x.", "r.r.r.r.r.r.r.r.", "................", gm::rim, gm::shaker, 0, 0.3f, 0, 0.75f, NoHalfTime },
+        { "samba", "Samba", "Latino", "Carla", "Surdo en el bombo y caja picada",
+          "X..xX..xX..xX..x", "X..xX..xX..xX..x", "X.oXo.X.X.oXo.X.", "XooXooXoXooXooXo",
+          "XxxxXxxxXxxxXxxx", "XxxxXxxxXxxxXxxx", "................", gm::snare, gm::shaker, 0, 0, 0, 1.0f, NoHalfTime },
+        { "reggae", "Reggae", "Latino", "Toto", "One drop: bombo y aro en el 3",
+          "........X.......", "........X......x", "........X.......", "........X.....o.",
+          "x.x.x.x.x.x.x.x.", "x.xxx.xxx.xxx.xx", "................", gm::rim, gm::shaker, 0.5f, 0.6f, 0, 0.95f, NoHalfTime },
+        { "ska", "Ska", "Latino", "Pipa", "Charles en el contratiempo",
+          "X.......X.......", "X.....x.X.......", "....X.......X...", "....X.......X..o",
+          "..o...o...o...o.", "x.o.x.o.x.o.x.o.", "................", gm::snare, gm::shaker, 0, 0.1f, 0, 1.1f, NoHalfTime | UpbeatHats },
+
+        // ---- Jazz y blues
+        { "jazz", "Jazz suave", "Jazz y blues", "Ana", "Ride con swing y escobillas",
+          "x...x...x...x...", "x...x..ox...x.o.", "......o.......o.", "..o...o...o...o.",
+          "................", "................", "................", gm::snare, gm::shaker, 0.65f, 0.4f, 0, 0.75f, JazzRide | NoHalfTime },
+        { "blues", "Blues shuffle", "Jazz y blues", "Willy", "Shuffle con el charles",
+          "X.......X.......", "X.....x.X.....x.", "....X.......X...", "....X..o....X..o",
+          "X.x.X.x.X.x.X.x.", "X.x.X.x.X.x.X.x.", "................", gm::snare, gm::shaker, 0.7f, 0.5f, 0, 1.0f, NoHalfTime },
+
+        // ---- Country y folk
+        { "country", "Country", "Country y folk", "Rodo", "Train beat: caja picada con acentos",
+          "X.......X.......", "X...X...X...X...", "....X.......X...", "ooooXoooooooXooo",
+          "................", "x.x.x.x.x.x.x.x.", "................", gm::snare, gm::tamb, 0, 0.1f, 0, 0.95f, NoHalfTime },
+        { "folk", "Folk / acústico", "Country y folk", "Malena", "Suave, con aro y pandereta",
+          "X.......X.......", "X......xX.......", "....X.......X...", "....X.......X...",
+          "x...x...x...x...", "x.x.x.x.x.x.x.x.", "..X...X...X...X.", gm::rim, gm::tamb, 0, 0.4f, 0, 0.8f, 0 },
+    };
+
+    Pattern hitPattern (const char* s)
+    {
+        Pattern p {};
+        for (int i = 0; i < 16 && s[i]; ++i)
+            p[(size_t) i] = s[i] == 'X' ? 1.0f : s[i] == 'x' ? 0.7f : s[i] == 'o' ? 0.35f : 0.0f;
+        return p;
+    }
+} // namespace
+
 const std::vector<DrummerStyle>& drummerStyles()
 {
-    static const std::vector<DrummerStyle> styles {
-        { "rock",       "Rock de garage", juce::String (u8"Tomás"),  "Directo y fuerte" },
-        { "pop",        "Pop",            juce::String (u8"Lucía"),  "Prolijo y bailable" },
-        { "funk",       "Funk",           "Nico",   "Mucho groove y notas fantasma" },
-        { "cuarteto",   "Cuarteto",       "Ramiro", juce::String (u8"Tunga-tunga cordobés") },
-        { "lofi",       "Lo-fi",          "Sol",    "Relajado, con swing" },
-        { "reggaeton",  juce::String (u8"Reggaetón"),      "Fede",   "Dembow" },
-        { "jazz",       "Jazz suave",     "Ana",    "Ride con swing y escobillas" },
-        { "electronic", juce::String (u8"Electrónica"),    "Max",    "Caja de ritmos, bombo en negras" },
-    };
+    static const std::vector<DrummerStyle> styles = []
+    {
+        std::vector<DrummerStyle> v;
+        for (auto& d : styleDefs)
+            v.push_back ({ d.id, juce::String::fromUTF8 (d.name), juce::String::fromUTF8 (d.who), juce::String::fromUTF8 (d.desc), juce::String::fromUTF8 (d.genre) });
+        return v;
+    }();
     return styles;
 }
 
 namespace
 {
-    using Pattern = std::array<float, 16>;   // probability per 16th note of a 4/4 bar
+    enum HatCode : uint8_t { HNone = 0, HClosed, HAccent, HOpen, HRide, HRideAcc, HBell, HCrash, HPedal, HGhost };
 
     struct StyleBrain
     {
-        Pattern kickSimple, kickComplex;
-        Pattern snareSimple, snareComplex;     // values < 0.5 at complex end become ghost notes
-        int  snareNote = gm::snare;
-        bool clapLayer = false;
-        bool rideWhenLoud = true;
-        bool jazzRide = false;
-        bool openHatOffbeats = false;
-        float extraSwing = 0.0f;
-        int  percNote = gm::tamb;
-        Pattern perc;
-        float laidBack = 0.3f;        // how far behind the beat the snare sits (0 = on top)
-        float machine = 0.0f;         // 1 = drum machine: no human timing
-        bool  halfTimeBridge = true;  // the bridge can drop to half time
-        bool  upbeatHats = false;     // hats accent the "&" (disco, pop)
+        Pattern kickSimple {}, kickComplex {}, snareSimple {}, snareComplex {}, perc {};
+        std::array<uint8_t, 16> hatS {}, hatC {};
+        int  snareNote = gm::snare, percNote = gm::tamb;
+        bool clapLayer = false, rideWhenLoud = false, jazzRide = false, openHatOffbeats = false;
+        bool halfTimeBridge = true, upbeatHats = false, doubleKick = false, blast = false, trapRolls = false, hatsCanFill = false;
+        float extraSwing = 0, laidBack = 0.3f, machine = 0, vel = 1.0f;
     };
+
+    std::array<uint8_t, 16> hatPattern (const char* s)
+    {
+        std::array<uint8_t, 16> p {};
+        for (int i = 0; i < 16 && s[i]; ++i)
+            switch (s[i])
+            {
+                case 'x': p[(size_t) i] = HClosed; break;  case 'X': p[(size_t) i] = HAccent; break;
+                case 'o': p[(size_t) i] = HOpen; break;    case 'r': p[(size_t) i] = HRide; break;
+                case 'R': p[(size_t) i] = HRideAcc; break; case 'b': p[(size_t) i] = HBell; break;
+                case 'c': p[(size_t) i] = HCrash; break;   case 'p': p[(size_t) i] = HPedal; break;
+                case 'g': p[(size_t) i] = HGhost; break;   default: break;
+            }
+        return p;
+    }
 
     StyleBrain brainFor (const juce::String& id)
     {
+        const StyleDef* d = &styleDefs[0];
+        for (auto& x : styleDefs) if (id == x.id) { d = &x; break; }
         StyleBrain b;
-        //                          1     e     &     a     2     e     &     a     3     e     &     a     4     e     &     a
-        if (id == "pop")
-        {
-            b.kickSimple   = { 1.0f, 0,    0,    0,    0,    0,    0,    0,    1.0f, 0,    0,    0,    0,    0,    0,    0 };
-            b.kickComplex  = { 1.0f, 0,    0,    0.3f, 0,    0,    0.7f, 0,    1.0f, 0,    0.6f, 0,    0,    0,    0.3f, 0 };
-            b.snareSimple  = { 0,    0,    0,    0,    1.0f, 0,    0,    0,    0,    0,    0,    0,    1.0f, 0,    0,    0 };
-            b.snareComplex = { 0,    0,    0,    0,    1.0f, 0,    0,    0.2f, 0,    0,    0,    0,    1.0f, 0,    0,    0.3f };
-            b.clapLayer = true;
-            b.percNote = gm::tamb;
-            b.perc = { 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0 };
-            b.laidBack = 0.15f;
-            b.upbeatHats = true;
-        }
-        else if (id == "funk")
-        {
-            b.kickSimple   = { 1.0f, 0,    0,    0,    0,    0,    0,    0,    0,    0,    1.0f, 0,    0,    0,    0,    0 };
-            b.kickComplex  = { 1.0f, 0,    0,    0.8f, 0,    0,    0.7f, 0,    0,    0,    1.0f, 0,    0,    0.5f, 0,    0 };
-            b.snareSimple  = { 0,    0,    0,    0,    1.0f, 0,    0,    0,    0,    0,    0,    0,    1.0f, 0,    0,    0 };
-            b.snareComplex = { 0,    0.2f, 0,    0.25f,1.0f, 0,    0.3f, 0.25f,0,    0.3f, 0,    0.25f,1.0f, 0,    0.3f, 0.2f };
-            b.rideWhenLoud = false;
-            b.openHatOffbeats = false;
-            b.percNote = gm::cowbell;
-            b.perc = { 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0 };
-            b.laidBack = 0.0f;
-            b.halfTimeBridge = false;
-        }
-        else if (id == "cuarteto")
-        {
-            // Bombo en cada tiempo, y el "tunga" de la caja/rim en los contratiempos
-            b.kickSimple   = { 1.0f, 0,    0,    0,    1.0f, 0,    0,    0,    1.0f, 0,    0,    0,    1.0f, 0,    0,    0 };
-            b.kickComplex  = { 1.0f, 0,    0,    0.3f, 1.0f, 0,    0,    0.3f, 1.0f, 0,    0,    0.3f, 1.0f, 0,    0,    0.4f };
-            b.snareSimple  = { 0,    0,    1.0f, 0,    0,    0,    1.0f, 0,    0,    0,    1.0f, 0,    0,    0,    1.0f, 0 };
-            b.snareComplex = { 0,    0,    1.0f, 0.4f, 0,    0,    1.0f, 0.4f, 0,    0,    1.0f, 0.4f, 0,    0,    1.0f, 0.5f };
-            b.snareNote = gm::rim;
-            b.rideWhenLoud = false;
-            b.percNote = gm::shaker;   // la güira
-            b.perc = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
-            b.laidBack = 0.0f;
-            b.halfTimeBridge = false;
-        }
-        else if (id == "lofi")
-        {
-            b.kickSimple   = { 1.0f, 0,    0,    0,    0,    0,    0,    0,    0,    0,    1.0f, 0,    0,    0,    0,    0 };
-            b.kickComplex  = { 1.0f, 0,    0,    0,    0,    0,    0,    0.6f, 0,    0,    1.0f, 0,    0,    0,    0.4f, 0 };
-            b.snareSimple  = { 0,    0,    0,    0,    1.0f, 0,    0,    0,    0,    0,    0,    0,    1.0f, 0,    0,    0 };
-            b.snareComplex = { 0,    0,    0,    0,    1.0f, 0,    0,    0.2f, 0,    0,    0,    0,    1.0f, 0,    0.2f, 0 };
-            b.rideWhenLoud = false;
-            b.extraSwing = 0.45f;
-            b.percNote = gm::shaker;
-            b.perc = { 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0 };
-            b.laidBack = 0.9f;
-        }
-        else if (id == "reggaeton")
-        {
-            b.kickSimple   = { 1.0f, 0,    0,    0,    1.0f, 0,    0,    0,    1.0f, 0,    0,    0,    1.0f, 0,    0,    0 };
-            b.kickComplex  = b.kickSimple;
-            b.snareSimple  = { 0,    0,    0,    1.0f, 0,    0,    1.0f, 0,    0,    0,    0,    1.0f, 0,    0,    1.0f, 0 };
-            b.snareComplex = { 0,    0,    0,    1.0f, 0,    0,    1.0f, 0.3f, 0,    0,    0,    1.0f, 0,    0.3f, 1.0f, 0 };
-            b.clapLayer = true;
-            b.rideWhenLoud = false;
-            b.percNote = gm::shaker;
-            b.perc = { 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0 };
-            b.laidBack = 0.1f;
-            b.machine = 0.6f;
-            b.halfTimeBridge = false;
-        }
-        else if (id == "jazz")
-        {
-            b.kickSimple   = { 0.35f,0,    0,    0,    0.35f,0,    0,    0,    0.35f,0,    0,    0,    0.35f,0,    0,    0 };
-            b.kickComplex  = { 0.4f, 0,    0,    0,    0.4f, 0,    0,    0.3f, 0.4f, 0,    0,    0,    0.4f, 0,    0.3f, 0 };
-            b.snareSimple  = { 0,    0,    0,    0,    0,    0,    0.15f,0,    0,    0,    0,    0,    0,    0,    0.2f, 0 };
-            b.snareComplex = { 0,    0,    0.3f, 0,    0,    0,    0.35f,0,    0,    0,    0.3f, 0,    0,    0,    0.4f, 0 };
-            b.jazzRide = true;
-            b.rideWhenLoud = false;
-            b.extraSwing = 0.65f;
-            b.percNote = gm::shaker;
-            b.perc = {};
-            b.laidBack = 0.4f;
-            b.halfTimeBridge = false;
-        }
-        else if (id == "electronic")
-        {
-            b.kickSimple   = { 1.0f, 0,    0,    0,    1.0f, 0,    0,    0,    1.0f, 0,    0,    0,    1.0f, 0,    0,    0 };
-            b.kickComplex  = { 1.0f, 0,    0,    0,    1.0f, 0,    0,    0.4f, 1.0f, 0,    0,    0,    1.0f, 0,    0.5f, 0 };
-            b.snareSimple  = { 0,    0,    0,    0,    1.0f, 0,    0,    0,    0,    0,    0,    0,    1.0f, 0,    0,    0 };
-            b.snareComplex = { 0,    0,    0,    0,    1.0f, 0,    0,    0,    0,    0,    0,    0,    1.0f, 0,    0,    0.5f };
-            b.snareNote = gm::clap;
-            b.openHatOffbeats = true;
-            b.rideWhenLoud = false;
-            b.percNote = gm::shaker;
-            b.perc = { 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1 };
-            b.laidBack = 0.0f;
-            b.machine = 1.0f;
-            b.halfTimeBridge = false;
-            b.upbeatHats = true;
-        }
-        else // rock
-        {
-            b.kickSimple   = { 1.0f, 0,    0,    0,    0,    0,    0,    0,    1.0f, 0,    0,    0,    0,    0,    0,    0 };
-            b.kickComplex  = { 1.0f, 0,    0,    0,    0,    0,    0,    0.6f, 1.0f, 0,    0.7f, 0,    0,    0,    0.4f, 0 };
-            b.snareSimple  = { 0,    0,    0,    0,    1.0f, 0,    0,    0,    0,    0,    0,    0,    1.0f, 0,    0,    0 };
-            b.snareComplex = { 0,    0,    0,    0,    1.0f, 0,    0,    0.2f, 0,    0.2f, 0,    0,    1.0f, 0,    0,    0.25f };
-            b.percNote = gm::tamb;
-            b.perc = { 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0 };
-            b.laidBack = 0.3f;
-        }
+        b.kickSimple = hitPattern (d->kickS);   b.kickComplex = hitPattern (d->kickC);
+        b.snareSimple = hitPattern (d->snareS); b.snareComplex = hitPattern (d->snareC);
+        b.perc = hitPattern (d->perc);
+        b.hatS = hatPattern (d->hatS);          b.hatC = hatPattern (d->hatC);
+        b.snareNote = d->snareNote;  b.percNote = d->percNote;
+        b.extraSwing = d->swing;     b.laidBack = d->laidBack;  b.machine = d->machine;  b.vel = d->vel;
+        b.rideWhenLoud = d->flags & RideLoud;   b.jazzRide = d->flags & JazzRide;  b.clapLayer = d->flags & Clap;
+        b.halfTimeBridge = ! (d->flags & NoHalfTime);
+        b.doubleKick = d->flags & DoubleKick;   b.blast = d->flags & Blast;        b.trapRolls = d->flags & TrapRolls;
+        b.upbeatHats = d->flags & UpbeatHats;
+        // closed hats on the eighths: the "level" can add more of them
+        for (int i = 0; i < 16; i += 2) if (b.hatS[(size_t) i] == HClosed || b.hatS[(size_t) i] == HAccent) b.hatsCanFill = true;
         return b;
     }
 
@@ -198,7 +269,7 @@ namespace
             if (pitch == gm::snare || pitch == gm::rim || pitch == gm::clap) feel = 0.012 * brain.laidBack;
             else if (pitch == gm::hatClosed || pitch == gm::hatOpen || pitch == gm::ride) feel = -0.004;
             beat += (feel + gauss() * 0.014) * human;
-            velocity *= 1.0f + gauss() * 0.16f * juce::jmax (0.15f, s.humanize);
+            velocity *= 1.0f + gauss() * (brain.vel > 1.15f ? 0.08f : 0.14f) * juce::jmax (0.15f, s.humanize);
             out.push_back ({ juce::jlimit (0.0, length - 0.01, beat), len, pitch, juce::jlimit (0.04f, 1.0f, velocity) });
         }
     };
@@ -269,6 +340,14 @@ namespace
             g.a.kick[0] = 1.05f;
         }
 
+        // Metal: double kick under everything when it gets complex; a blast beat at the top
+        if (brain.doubleKick && c >= 0.6f) for (int p = 0; p < 16; ++p) g.a.kick[(size_t) p] = juce::jmax (g.a.kick[(size_t) p], 0.82f);
+        if (brain.blast && c >= 0.65f)
+            for (int p = 0; p < 16; ++p)
+            {
+                g.a.kick[(size_t) p] = p % 2 == 0 ? 0.9f : 0.0f;
+                g.a.snare[(size_t) p] = p % 2 == 1 ? 0.85f : 0.0f;
+            }
         if (brain.openHatOffbeats) for (int p = 2; p < 16; p += 4) g.a.hatOpen[(size_t) p] = 1;
         if (feel.moreOpenHats && rng.nextFloat() < 0.6f) g.a.hatOpen[14] = 1;
 
@@ -416,7 +495,7 @@ std::vector<Note> generateDrumPart (const DrumRequest& req)
         }
         c = juce::jlimit (0.0f, 1.0f, c);
         loud = juce::jlimit (0.0f, 1.0f, loud);
-        const float baseVel = (0.4f + 0.52f * loud) * (1.0f + w.gauss() * 0.04f);
+        const float baseVel = (0.4f + 0.52f * loud) * brain.vel * (1.0f + w.gauss() * 0.04f);
 
         // Busy strumming asks for busier hats
         int busy = 0;
@@ -482,7 +561,7 @@ std::vector<Note> generateDrumPart (const DrumRequest& req)
                     if (downbeat && st > 0.85f && bar > 0 && bar - 1 < (int) req.followBarEnergy.size() && req.followBarEnergy[(size_t) bar - 1] < 0.1f)
                         crashHere = s.cymbals;   // the guitar comes back in
                 }
-                if (downbeat && crashNext) kv = juce::jmax (kv, 1.05f);
+                if (downbeat && crashNext && brain.kickSimple[0] > 0.0f) kv = juce::jmax (kv, 1.05f);   // (not in a one drop)
                 if (kv > 0.0f) w.hit (beat, gm::kick, baseVel * kv);
 
                 const float sv = gb.snare[(size_t) p];
@@ -510,25 +589,45 @@ std::vector<Note> generateDrumPart (const DrumRequest& req)
                 }
                 else
                 {
-                    // 1-2 quarters, 3-4 eighths, 5+ sixteenths
-                    int every = cymLevel <= 2 ? 4 : cymLevel <= 4 ? 2 : 1;
-                    if (feel.sparseHats) every = juce::jmax (every, 2);
-                    if (busyness > 0.5f) every = juce::jmin (every, 2);
-                    else if (busyness >= 0.0f && busyness < 0.1f && energy < 0.15f) every = juce::jmax (every, 4);
+                    // The style's own hi-hat/ride part; the "level" thins it out (1-2) or fills it (6+)
+                    int code = (c >= 0.55f ? brain.hatC : brain.hatS)[(size_t) p];
+                    if (cymLevel <= 2 && p % 4 != 0 && code != HOpen) code = HNone;
+                    if ((feel.sparseHats || (busyness >= 0.0f && busyness < 0.1f && energy < 0.15f)) && p % 2 == 1) code = HNone;
+                    if (brain.hatsCanFill && code == HNone && (cymLevel >= 6 || (busyness > 0.5f && p % 2 == 0))) code = p % 2 == 0 ? HClosed : HGhost;
+                    if (code != HNone && gb.hatOpen[(size_t) p] && (code == HClosed || code == HAccent)) code = HOpen;
+                    if (code != HNone && cymLevel >= 7 && p == 14 && (code == HClosed || code == HAccent)) code = HOpen;
                     const bool useRide = feel.ride || (brain.rideWhenLoud && loud > 0.85f);
-                    if (step % every == 0)
+                    if (useRide && (code == HClosed || code == HAccent || code == HGhost || code == HOpen)) code = (onBeat || code == HAccent) ? HRideAcc : HRide;
+                    if (code != HNone)
                     {
-                        const bool open = gb.hatOpen[(size_t) p] || (cymLevel >= 7 && p == 14 && rng.nextFloat() < 0.7f);
-                        float v;
-                        if (groove.hatAccent == 1)      v = p % 4 == 2 ? 0.88f : onBeat ? 0.66f : 0.5f;   // accent on the "&"
-                        else if (groove.hatAccent == 2) v = onBeat ? 0.78f : 0.7f;                        // even
-                        else                            v = onBeat ? 0.86f : (p % 2 == 0 ? 0.66f : 0.5f);
-                        if (feel.floorTom && s.toms && p % 2 == 0)
-                            w.hit (beat, gm::tomFloor, baseVel * v * 0.85f);
+                        float v = 0.66f;
+                        int note = gm::hatClosed;
+                        switch (code)
+                        {
+                            case HAccent:  v = 0.88f; break;
+                            case HGhost:   v = 0.42f; break;
+                            case HOpen:    v = 0.8f;  note = gm::hatOpen; break;
+                            case HRide:    v = 0.7f;  note = gm::ride; break;
+                            case HRideAcc: v = 0.86f; note = gm::ride; break;
+                            case HBell:    v = 0.85f; note = 53; break;
+                            case HCrash:   v = 0.88f; note = gm::crash; break;
+                            case HPedal:   v = 0.5f;  note = gm::hatPedal; break;
+                            default:       v = onBeat ? 0.72f : 0.62f; break;
+                        }
+                        if (groove.hatAccent == 1 && (code == HClosed || code == HGhost)) v *= p % 4 == 2 ? 1.25f : 0.85f;   // accent on the "&"
+                        if (feel.floorTom && s.toms && p % 2 == 0 && note != gm::crash)
+                            w.hit (beat, gm::tomFloor, baseVel * 0.7f);
                         else
-                            w.hit (beat, useRide ? gm::ride : open ? gm::hatOpen : gm::hatClosed, baseVel * v);
+                            w.hit (beat, note, baseVel * v, note == gm::crash ? 1.5 : 0.1);
                         // the foot closes an open hat on the next beat
-                        if (open && ! useRide && p + 2 < 16 && (p + 2) % 4 == 0) w.hit (beat + 0.5, gm::hatPedal, baseVel * 0.45f);
+                        if (note == gm::hatOpen && p + 2 < 16 && (p + 2) % 4 == 0 && (c >= 0.55f ? brain.hatC : brain.hatS)[(size_t) p + 2] == HNone)
+                            w.hit (beat + 0.5, gm::hatPedal, baseVel * 0.45f);
+                        // trap: quick rolls on the hats at the end of the phrase
+                        if (brain.trapRolls && note == gm::hatClosed && (variation ? p >= 8 : p >= 12) && rng.nextFloat() < 0.35f + 0.4f * c)
+                        {
+                            const int n = rng.nextFloat() < 0.5f ? 2 : 3;
+                            for (int k = 1; k < n; ++k) w.hit (beat + k * 0.25 / n, gm::hatClosed, baseVel * v * (0.6f + 0.15f * k));
+                        }
                     }
                 }
             }

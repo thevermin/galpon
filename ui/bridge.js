@@ -117,7 +117,29 @@
   // ---------------------------------------------------------------- misc
   G.clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   G.dbToText = (db) => (db <= -79 ? '-∞' : (db > 0 ? '+' : '') + db.toFixed(1)) + ' dB';
-  G.noteName = (p) => ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'][((p % 12) + 12) % 12] + (Math.floor(p / 12) - 1);
+  // Note names: C D E… (default) or Do Re Mi…, chosen in Settings, for the studio and the game
+  const NAMES_EN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const NAMES_ES = ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];
+  G.namesEs = () => { try { return localStorage.getItem('galpon.noteNames') === 'es'; } catch (e) { return false; } };
+  G.setNames = (v) => { try { localStorage.setItem('galpon.noteNames', v); } catch (e) { /* only this session */ } };
+  /** 0..11 -> "E" or "Mi" */
+  G.pcName = (pc) => (G.namesEs() ? NAMES_ES : NAMES_EN)[((pc % 12) + 12) % 12];
+  G.noteName = (p) => G.pcName(p) + (Math.floor(p / 12) - 1);
+  /** A chord from the engine ({ name: Spanish, en: English }) */
+  G.chordText = (c) => (G.namesEs() ? c.name : c.en || c.name);
+  /** "Em7", "F#", "Bb" -> in the chosen language ("Mim7", "Fa#", "Sib"); Spanish names go to English too */
+  G.chordLabel = (text) => {
+    const s = String(text || '').trim();
+    if (!s) return s;
+    const es = [['Sol', 'G'], ['Do', 'C'], ['Re', 'D'], ['Mi', 'E'], ['Fa', 'F'], ['La', 'A'], ['Si', 'B']];
+    const toEs = { C: 'Do', D: 'Re', E: 'Mi', F: 'Fa', G: 'Sol', A: 'La', B: 'Si' };
+    let root = '', rest = '';
+    const hit = es.find(([n]) => s.startsWith(n));
+    if (hit) { root = hit[1]; rest = s.slice(hit[0].length); }
+    else if (/^[A-G]/.test(s)) { root = s[0]; rest = s.slice(1); }
+    else return s;
+    return (G.namesEs() ? toEs[root] : root) + rest;
+  };
   G.debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
   G.throttle = (fn, ms) => {
     let last = 0, timer = null, lastArgs;

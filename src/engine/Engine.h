@@ -265,7 +265,43 @@ private:
     juce::Optional<PositionInfo> currentPosition;
 
     juce::AudioBuffer<float> master, scratch;
-    juce::dsp::Limiter<float> limiter;
+    /** Keeps the master from clipping. When it has to lower the level it lowers everything, so in
+        the game a loud guitar on top of a loud song pulls the song down: `floorGain` caps how far. */
+    struct MasterLimiter
+    {
+        float gain = 1.0f, release = 0.001f;
+        std::atomic<float> floorGain { 0.0f };   // 0 = as far as needed; 1 = never lower (it softly clips instead)
+        static constexpr float ceiling = 0.891f; // -1 dB: room for MP3s, which overshoot
+        void prepare (double sr) { release = 1.0f - std::exp (-1.0f / (0.12f * (float) sr)); gain = 1.0f; }
+        void reset() { gain = 1.0f; }
+        void process (juce::AudioBuffer<float>& b, int n)
+        {
+            auto* l = b.getWritePointer (0);
+            auto* r = b.getWritePointer (1);
+            const float floor = floorGain.load();
+            for (int i = 0; i < n; ++i)
+            {
+                const float peak = std::max (std::abs (l[i]), std::abs (r[i]));
+                float need = peak > ceiling ? ceiling / peak : 1.0f;
+                need = std::max (need, floor);
+                gain = need < gain ? need : gain + (need - gain) * release;   // instant down, 120 ms back up
+                l[i] = soft (l[i] * gain);
+                r[i] = soft (r[i] * gain);
+            }
+        }
+        static float soft (float x)
+        {
+            const float a = std::abs (x);
+            if (a <= ceiling) return x;
+            const float knee = 1.0f - ceiling;
+            return std::copysign (ceiling + knee * std::tanh ((a - ceiling) / knee), x);
+        }
+    };
+    MasterLimiter limiter;
+public:
+    /** Game mode: how many dB your guitar may pull the song down when you play loud (0 = none). */
+    void setDuckLimitDb (float db) { limiter.floorGain = db >= 40.0f ? 0.0f : juce::Decibels::decibelsToGain (-juce::jmax (0.0f, db)); }
+private:
     int maxTrackLatency = 0;
     bool cycleRecording = false;
     int autoArmedTrackId = 0;

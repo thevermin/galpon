@@ -7,7 +7,7 @@ namespace galpon
 
 struct DrummerStyle
 {
-    juce::String id, name, who, description;
+    juce::String id, name, who, description, genre;
 };
 
 const std::vector<DrummerStyle>& drummerStyles();

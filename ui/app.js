@@ -92,13 +92,13 @@
 
   // ------------------------------------------------------------------ top bar
   const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-  const KEY_ES = ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];
+  const KEY_ES = new Proxy([], { get: (_, i) => (/^\d+$/.test(String(i)) ? G.pcName(+i) : undefined) });   // note names in the chosen language
 
   function renderTopbar() {
     const s = G.state.song;
     $('#lcd-bpm b').textContent = Math.round(s.bpm * 10) / 10;
     $('#lcd-sig b').textContent = `${s.sigNum}/${s.sigDen}`;
-    $('#lcd-key b').textContent = KEY_ES[Math.max(0, KEYS.indexOf(s.key))] + (s.minor ? ' men' : ' may');
+    $('#lcd-key b').textContent = KEY_ES[Math.max(0, KEYS.indexOf(s.key))] + (G.namesEs() ? (s.minor ? ' men' : ' may') : (s.minor ? 'm' : ''));
     $('#btn-cycle').classList.toggle('on', s.cycle);
     $('#btn-metro').classList.toggle('on', s.metronome);
     $('#btn-countin').classList.toggle('on', s.countIn);
@@ -704,7 +704,7 @@
     const dlg = G.modal('Configuración', (body) => {
       const draw = () => {
         body.innerHTML = '';
-        const tabs = el('div.tabs', null, ...[['audio', 'Audio'], ['midi', 'MIDI'], ['rec', 'Grabación'], ['plugins', 'Plugins']]
+        const tabs = el('div.tabs', null, ...[['audio', 'Audio'], ['midi', 'MIDI'], ['rec', 'Grabación'], ['plugins', 'Plugins'], ['general', 'General']]
           .map(([id, label]) => el('button.pill' + (current === id ? '.on' : ''), { onclick: () => { current = id; draw(); } }, label)));
         body.appendChild(tabs);
         const a = G.audio;
@@ -748,6 +748,15 @@
             el('div.chlist', null, ...(a.outputChannels || []).map((name, i) => el('label', null,
               el('input', { type: 'checkbox', checked: !!a.outputActive[i], onchange: (e) => { const list = a.outputActive.slice(); list[i] = e.target.checked; change({ outputActive: list }); } }), name))),
             el('p.note', { text: 'Para usar dos interfaces a la vez en Mac, crea un "Dispositivo agregado" en la app Configuración de Audio MIDI y elígelo acá. Para grabar sin demora usa un búfer de 64–128 muestras; si se escuchan cortes, súbelo.' }));
+        } else if (current === 'general') {
+          const opt = (v, label, hint) => el('label.radio', null,
+            el('input', { type: 'radio', name: 'names', checked: G.namesEs() === (v === 'es'), onchange: () => { G.setNames(v); A.refresh(); if (G.Timeline) G.Timeline.render(); draw(); } }),
+            el('span', null, el('b', { text: label }), el('small', { text: hint })));
+          body.append(el('b', { text: 'Nombres de las notas y los acordes' }),
+            el('div.radios', null,
+              opt('en', 'C D E F G A B (inglés)', 'Am, G7, F#m… Como en la mayoría de las tablaturas y en Rocksmith.'),
+              opt('es', 'Do Re Mi Fa Sol La Si', 'Lam, Sol7, Fa#m…')),
+            el('p.note', { text: 'Se usa en el estudio (acordes, tonalidad, teclado) y en el modo juego.' }));
         } else if (current === 'midi') {
           body.append(el('p.note', { text: 'Los teclados y controladores MIDI conectados tocan la pista seleccionada.' }));
           if (!a.midiInputs.length) body.append(el('p.note', { text: 'No hay dispositivos MIDI conectados.' }));

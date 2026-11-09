@@ -449,6 +449,38 @@ static void testDrummerArrangement()
            && map.contains ("$SNARE_CENTER_KEY 38"), "la batería real queda con los toms donde los toca el baterista");
 }
 
+static void testDrummerStyles()
+{
+    std::cout << "Baterista: estilos por género\n";
+    std::set<juce::String> genres;
+    for (auto& st : drummerStyles()) genres.insert (st.genre);
+    CHECK (drummerStyles().size() >= 30 && genres.size() >= 7 && genres.count ("Metal"), "hay muchos estilos, agrupados por género (" << drummerStyles().size() << " en " << genres.size() << ")");
+
+    auto make = [] (const char* id, float c, float loud = 0.6f)
+    {
+        DrumRequest r; r.settings.style = id; r.settings.complexity = c; r.settings.loudness = loud; r.lengthBeats = 16; r.seed = 4; r.fillAtEnd = false;
+        return generateDrumPart (r);
+    };
+    auto avg = [] (const std::vector<Note>& n, std::initializer_list<int> pitches)
+    {
+        float v = 0; int k = 0;
+        for (auto& x : n) for (int pch : pitches) if (x.pitch == pch && x.velocity > 0.5f) { v += x.velocity; ++k; }
+        return k ? v / k : 0.0f;
+    };
+    const float rock = avg (make ("rock", 0.4f), { 36, 38 }), ballad = avg (make ("ballad", 0.4f), { 36, 37, 38 }), metal = avg (make ("heavymetal", 0.4f), { 36, 38 });
+    CHECK (rock > 0.8f && metal >= rock && ballad < rock - 0.1f, "el rock y el metal pegan fuerte; la balada, suave (" << ballad << " / " << rock << " / " << metal << ")");
+
+    int kicks = 0; for (auto& x : make ("thrash", 0.9f)) kicks += x.pitch == 36 && x.beat < 4;
+    CHECK (kicks >= 14, "thrash complejo: doble bombo (" << kicks << " bombos en un compás)");
+    int snares = 0; for (auto& x : make ("deathmetal", 0.9f)) snares += x.pitch == 38 && x.beat < 4;
+    CHECK (snares >= 7, "death metal complejo: blast beat (" << snares << " cajas en un compás)");
+    int fast = 0; auto tr = make ("trap", 0.8f);
+    for (size_t i = 1; i < tr.size(); ++i) if (tr[i].pitch == 42 && tr[i - 1].pitch == 42 && tr[i].beat - tr[i - 1].beat < 0.16) ++fast;
+    CHECK (fast > 0, "trap: redobles en el charles");
+    bool oneDrop = true; for (auto& x : make ("reggae", 0.1f)) if (x.pitch == 36 && x.beat < 4 && std::abs (x.beat - 2.0) > 0.1) oneDrop = false;
+    CHECK (oneDrop, "reggae: el bombo cae en el 3 (one drop)");
+}
+
 static void testRecording()
 {
     std::cout << "Grabación de audio y MIDI\n";
@@ -2301,6 +2333,7 @@ int main()
     testDrummer();
     testDrummerParts();
     testDrummerArrangement();
+    testDrummerStyles();
     testRecording();
     testRecordingSafety();
     testSaveLoadUndoExport();

@@ -489,10 +489,7 @@ void Engine::prepareAll (double sr, int bs)
     scratch.setSize (32, blockSize);
     liveBlock.ensureSize (4096);
     liveMidi.reset (sr);
-    limiter.prepare ({ sr, (juce::uint32) blockSize, 2 });
-    limiter.setThreshold (-1.0f);
-    limiter.setRelease (120.0f);
-    limiter.reset();
+    limiter.prepare (sr);
 
     for (auto& t : song.tracks)
     {
@@ -1037,9 +1034,7 @@ void Engine::renderSegment (int offset, int len, const float* const* in, int num
     masterView.applyGain (juce::Decibels::decibelsToGain (song.masterDb, -80.0f));
     if (song.limiter)
     {
-        juce::dsp::AudioBlock<float> block (masterView);
-        limiter.process (juce::dsp::ProcessContextReplacing<float> (block));
-        masterView.applyGain (0.891f);   // JUCE's limiter tops out at 0 dB: leave 1 dB of room (MP3s overshoot)
+        limiter.process (masterView, len);
     }
 
     addMetronome (segStart, len, offset);

@@ -496,6 +496,7 @@ juce::var EngineApi::library()
         so->setProperty ("name", st.name);
         so->setProperty ("who", st.who);
         so->setProperty ("description", st.description);
+        so->setProperty ("genre", st.genre);
         styles.add (juce::var (so));
     }
     for (auto& l : loopLibrary())
@@ -1514,6 +1515,7 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
     {
         engine.scorer.clearEvents();
         engine.scorerInput = -1;
+        engine.setDuckLimitDb (60.0f);   // back to the studio: the limiter does whatever it needs
         restoreGameTone();
         const juce::ScopedLock sl (engine.lock);
         game.close();
@@ -1534,6 +1536,7 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
     if (cmd == "gameSeek")  { game.seek ((double) arg (args, "time", 0.0)); return ok(); }
     if (cmd == "gameSpeed") { game.setSpeed ((float) (double) arg (args, "speed", 1.0)); return ok(); }
     if (cmd == "gameLoop")  { game.setLoop ((bool) arg (args, "on", false), (double) arg (args, "a", 0.0), (double) arg (args, "b", 0.0)); return ok(); }
+    if (cmd == "gameDuck") { engine.setDuckLimitDb ((float) (double) arg (args, "db", 60.0)); return ok(); }
     if (cmd == "gameVolume") { game.setMasterGain ((float) (double) arg (args, "gain", 1.0)); return ok(); }
     if (cmd == "gameStemVolume")
     {

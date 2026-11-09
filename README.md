@@ -7,7 +7,7 @@
 - **Windows**: baja el instalador desde [Releases](../../releases), o el último build desde [Actions](../../actions).
 - **Mac**: se compila en un par de comandos (ver [Compilar](#compilar)).
 
-Versión actual: **0.9**.
+Versión actual: **0.10**.
 
 ---
 
@@ -21,7 +21,7 @@ Versión actual: **0.9**.
 - **Instrumentos propios**: piano, piano eléctrico, órgano, sintetizador y batería. Hay un **sampler** SFZ con instrumentos grabados que se descargan con un clic: piano de cola, batería acústica, bajo y guitarra acústica.
 - **Efectos propios**: ecualizador, compresor, puerta de ruido, distorsión, amplificador, **Amp NAM** (capturas `.nam`), gabinete IR, chorus, delay y reverb.
 - **Plugins AU y VST3**, con su propia ventana y compensación de demora.
-- **Baterista automático** con 8 estilos: sencillo/complejo, suave/fuerte, redobles y swing. Toca como una persona: mantiene un groove, lo varía al final de cada frase y hace redobles distintos. Escucha la guitarra o el bajo que grabaste: marca sus golpes con el bombo y toca más fuerte o más suave según cómo toques.
+- **Baterista automático** con más de 35 estilos en 8 géneros (rock, metal, pop, funk y soul, hip hop y electrónica, latino, jazz y blues, country y folk): punk, thrash con doble bombo, death metal con blast beat, trap, cumbia, cuarteto, bossa, reggae y más. Sencillo/complejo, suave/fuerte, redobles y swing. Toca como una persona: mantiene un groove, lo varía al final de cada frase y hace redobles distintos. Escucha la guitarra o el bajo que grabaste: marca sus golpes con el bombo y toca más fuerte o más suave según cómo toques.
 - **La canción por partes**: el baterista arranca con la canción armada (intro, estrofa, estribillo, estrofa, estribillo, puente, estribillo y final), una región por parte. Cada una se alarga, se mueve o se genera de nuevo sin tocar las demás. Toca cada parte distinto, entra con un platillo, hace un redoble antes de cada cambio y termina con un golpe final.
 - **Batería acústica real**: con un clic baja una batería grabada con varios micrófonos (CC0) y el baterista la usa en lugar de la sintetizada.
 - **Loops** que siguen el tempo y el tono, **editor de notas**, **teclado en pantalla** y teclados MIDI.
@@ -49,11 +49,13 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
   - **Tablatura (2D)**: las notas llegan de derecha a izquierda.
   - **Mástil en 3D**: una cámara en ángulo, como en Rocksmith, con la cuerda más grave arriba. Las notas vienen desde el fondo por el carril de su traste, que se ilumina, y la cámara sigue la mano con suavidad.
   - **Las dos a la vez**: el 3D arriba y la tablatura abajo.
+- **Técnicas como en Rocksmith**: slides que cruzan al traste de destino, bends con flecha, ligados (nota hueca), armónicos (rombo), palm mute (franja oscura), vibrato y trémolo.
+- **Notas en inglés (C D E) o en español (Do Re Mi)**, a elección, en el estudio y en el juego.
 - El orden de las cuerdas se puede poner como tablatura o con la grave arriba. El tamaño se ajusta con − y +.
 - Muestra acordes, notas largas, bends, slides, ligados, palm mute, armónicos, vibrato, partes de la canción, letra y un diapasón con la posición de la mano.
 - **Te escucha y te da puntos**: reconoce las notas y acordes que tocas, si llegaste a tiempo y si mantuviste las notas largas. Lleva racha, multiplicador y precisión. Al final ves un resumen por parte y puedes practicar la parte que más te costó.
 - **Práctica**: más despacio sin cambiar el tono (30–100 %), repetir A–B o una parte entera.
-- **Volumen** del Master, de cada instrumento de la canción y de tu guitarra. Hay un atajo para bajar o quitar la guitarra (o el bajo) de la grabación y escucharte mejor.
+- **Volumen** del Master, de cada instrumento de la canción y de tu guitarra. Hay un atajo para bajar o quitar la guitarra (o el bajo) de la grabación y escucharte mejor, y puedes elegir cuánto baja la canción cuando tocas fuerte.
 - **Sonido automático**: arma los efectos que pide cada parte (limpio, distorsión, solo…) y los cambia solo. Si conectas tu cuenta de **TONE3000**, usa las capturas que marcaste como favoritas.
 - Afinador con la afinación de la canción y ajuste de sincronía.
 
