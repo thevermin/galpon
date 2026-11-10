@@ -144,7 +144,23 @@
         el('span.note', { text: 'Toca fuerte: los picos tienen que llegar a lo amarillo, nunca a lo rojo.' })));
 
       const row = el('div.row', { style: { marginBottom: '12px' } }, el('span.note', { text: 'Sonidos listos:' }));
-      AUDIO_PRESETS.forEach((p) => row.appendChild(el('button.pill', { onclick: () => P.applyAudioPreset(track, p) }, p.name)));
+      AUDIO_PRESETS.filter((p) => !/^Guitarra (limpia|crunch)$|^Bajo directo$/.test(p.name))
+        .forEach((p) => row.appendChild(el('button.pill', { onclick: () => P.applyAudioPreset(track, p) }, p.name)));
+      // Galpon's guitar and bass sounds (the same ones the game picks from)
+      const tones = (G.lib && G.lib.tonePresets) || [];
+      if (tones.length) {
+        const groups = [];
+        tones.forEach((tp) => { let g = groups.find((x) => x.name === tp.group); if (!g) groups.push(g = { name: tp.group, items: [] }); g.items.push(tp); });
+        row.appendChild(el('select.sel', { 'aria-label': 'Sonidos de guitarra y bajo', style: { maxWidth: '220px' }, onchange: async (e) => {
+          const id = e.target.value;
+          if (!id) return;
+          const tp = tones.find((x) => x.id === id);
+          await G.run('applyTonePreset', { trackId: track.id, id });
+          G.toast((tp ? tp.name : 'Sonido') + ': listo' + (tp && tp.description ? ' — ' + tp.description : ''));
+        } }, el('option', { value: '', text: 'Guitarra y bajo…' }),
+          ...groups.map((g) => el('optgroup', { label: g.name }, ...g.items.map((tp) => el('option', { value: tp.id, text: tp.name, title: tp.description }))))));
+      }
+      row.appendChild(el('button.pill', { title: 'Afinador, afinaciones y afinación virtual', onclick: () => G.App.showTuner() }, 'Afinar…'));
       body.appendChild(row);
     }
 

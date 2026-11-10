@@ -100,6 +100,7 @@ const std::vector<BuiltinInfo>& builtinTypes()
         { "chorus",  "Chorus",              "effect", "Ensancha y da movimiento" },
         { "delay",   "Delay",               "effect", "Eco sincronizado al tempo" },
         { "reverb",  "Reverb",              "effect", "Ambiente de sala" },
+        { "retune",  juce::String (u8"Afinación virtual"), "effect", juce::String (u8"Tu guitarra suena más grave o más aguda, sin reafinarla") },
     };
     return types;
 }
@@ -138,6 +139,8 @@ std::unique_ptr<juce::AudioProcessor> createBuiltin (const juce::String& type)
         return createNamAmp();
     if (type == "sampler")
         return createSampler();
+    if (type == "retune")
+        return createRetune();
     if (auto i = createBuiltinInstrument (type))
         return i;
     return createBuiltinEffect (type);

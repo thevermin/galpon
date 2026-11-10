@@ -1,4 +1,5 @@
 #include "EngineApi.h"
+#include "ToneLibrary.h"
 #include "Drummer.h"
 #include "Loops.h"
 #include "Analysis.h"
@@ -521,6 +522,20 @@ juce::var EngineApi::library()
     o->setProperty ("effects", effects);
     o->setProperty ("instruments", instruments);
     o->setProperty ("drummerStyles", styles);
+    {
+        juce::Array<juce::var> tones;
+        for (auto& tp : tonePresets())
+        {
+            auto* po = new juce::DynamicObject();
+            po->setProperty ("id", tp.id);
+            po->setProperty ("name", tp.name);
+            po->setProperty ("group", tp.group);
+            po->setProperty ("description", tp.description);
+            po->setProperty ("bass", tp.bass);
+            tones.add (juce::var (po));
+        }
+        o->setProperty ("tonePresets", tones);
+    }
     o->setProperty ("loops", loops);
     o->setProperty ("sounds", sounds.describe());
     o->setProperty ("plugins", engine.plugins.listToVar());
@@ -786,6 +801,35 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
     //---------------------------------------------------------------- real instruments (sampler)
     if (cmd == "downloadSound") return fromResult (sounds.download (arg (args, "id").toString()));
     if (cmd == "cancelDownload") { sounds.cancel (arg (args, "id").toString()); return ok(); }
+    if (cmd == "setRetune")
+    {
+        // { trackId, semitones }: the virtual tuning on a track (first in its chain; 0 takes it out)
+        auto* t = trackArg();
+        if (t == nullptr || t->kind != TrackKind::Audio) return fail (juce::String (u8"La afinación virtual es para pistas de audio (la de tu guitarra o bajo)"));
+        engine.pushUndo();
+        setRetune (t->id, (float) (double) arg (args, "semitones", 0.0));
+        changed();
+        return ok();
+    }
+    if (cmd == "applyTonePreset")
+    {
+        // { trackId, id }: replace the track's effects with one of Galpon's guitar/bass sounds
+        auto* t = trackArg();
+        auto* tp = findTonePreset (arg (args, "id").toString());
+        if (t == nullptr || tp == nullptr) return fail ("No encuentro ese sonido");
+        if (t->kind != TrackKind::Audio) return fail ("Los sonidos de guitarra son para pistas de audio");
+        engine.pushUndo();
+        while (! t->inserts.empty()) engine.removeInsert (t->id, (int) t->inserts.size() - 1);
+        for (auto& st : tp->chain)
+        {
+            if (engine.addInsert (t->id, "builtin", st.type, -1).failed()) continue;
+            if (auto* slot = engine.findSlot (t->id, (int) t->inserts.size() - 1))
+                if (auto* b = dynamic_cast<BuiltinProcessor*> (slot->processor.get()))
+                    for (auto& [kk, vv] : st.params) b->setReal (kk, vv);
+        }
+        changed();
+        return ok();
+    }
     if (cmd == "useRealDrums")
     {
         // { trackId }: put the recorded acoustic kit on the drummer (it must be downloaded)
@@ -1524,6 +1568,7 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
         engine.scorerInput = -1;
         engine.setDuckLimitDb (60.0f);   // back to the studio: the limiter does whatever it needs
         restoreGameTone();
+        if (std::abs (gameRetuneSemis) > 0.001f) { setRetune (gameGuitarTrackId, 0.0f); gameRetuneSemis = 0.0f; }
         const juce::ScopedLock sl (engine.lock);
         game.close();
         gamePack.reset();
@@ -1579,6 +1624,19 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
         return ok (juce::var (o));
     }
     if (cmd == "gameTone")      return gameTone (args);
+    if (cmd == "gameRetune")
+    {
+        // { semitones }: play a song in another tuning without retuning (on your track and the game's sound)
+        gameRetuneSemis = juce::jlimit (-7.0f, 7.0f, (float) (double) arg (args, "semitones", 0.0));
+        if (engine.song.findTrack (gameGuitarTrackId) != nullptr) setRetune (gameGuitarTrackId, gameRetuneSemis, 0);
+        if (gameToneOn && engine.song.findTrack (gameToneTrackId) != nullptr)
+        {
+            const int d = setRetune (gameToneTrackId, gameRetuneSemis, 1);   // right after the gate
+            if (d != 0) { for (auto& r : gameRigs) r.first += d; gameActiveRig = -2; applyGameTone(); }
+        }
+        engine.dirty = true; touch();
+        return ok();
+    }
     if (cmd == "gameDetectOffset") { gameDetectOffsetMs = (double) arg (args, "offsetMs", 0.0); updateScorerInput(); return ok(); }
     if (cmd == "gameGuitar")
     {
@@ -1682,34 +1740,24 @@ juce::Array<juce::var> EngineApi::chainForTone (const juce::String& rigId, const
         return f.getFullPathName();
     };
 
-    // A sound chosen by hand from the presets: that's it
-    if (const auto preset = assign["preset"].toString(); preset.isNotEmpty() && preset != "auto")
+    auto addPreset = [&add, &chain] (const TonePreset& tp)
     {
-        // Typical amp settings (0-10 knobs, as players write them, turned into dB around noon)
-        auto knob = [] (double v) { return (v - 5.0) * 2.4; };
-        auto amp = [&] (double gain, double b, double m, double t)
-        { add ("amp", { { "gain", gain }, { "bass", knob (b) }, { "mid", knob (m) }, { "treble", knob (t) }, { "cab", 1.0 }, { "master", -8.0 } }); };
-        if (preset == "clean")       { amp (0.08, 5, 6, 7);  add ("reverb", { { "size", 0.45 }, { "mix", 0.2 } }); }
-        else if (preset == "chorus") { amp (0.08, 5, 6, 7);  add ("chorus", { { "rate", 0.6 }, { "depth", 0.35 }, { "mix", 0.45 } }); add ("reverb", { { "size", 0.5 }, { "mix", 0.22 } }); }
-        else if (preset == "acoustic") { amp (0.03, 4, 5, 8); add ("chorus", { { "rate", 0.4 }, { "depth", 0.15 }, { "mix", 0.2 } }); add ("reverb", { { "size", 0.4 }, { "mix", 0.25 } }); }
-        else if (preset == "crunch")  { amp (0.42, 5, 8, 5);  add ("reverb", { { "size", 0.3 }, { "mix", 0.1 } }); }
-        else if (preset == "drive")   { amp (0.68, 6, 5, 6);  add ("reverb", { { "size", 0.3 }, { "mix", 0.08 } }); }
-        else if (preset == "highgain")
+        const int first = chain.size();
+        for (auto& st : tp.chain)
         {
-            // a tube-screamer-style boost in front tightens a high-gain amp (the classic metal trick)
-            add ("drive", { { "drive", 0.12 }, { "tone", 3800.0 }, { "level", 4.0 }, { "mix", 1.0 } });
-            amp (0.95, 7, 4, 5);
+            auto* o = add (st.type, {});
+            auto* prm = o->getProperty ("params").getDynamicObject();
+            for (auto& [kk, vv] : st.params) prm->setProperty (kk, (double) vv);
         }
-        else if (preset == "lead")
+        if (auto* o = chain[first].getDynamicObject()) o->setProperty ("preset", tp.name);   // so the interface can say which one
+    };
+    // A sound chosen by hand from Galpon's presets: that's it
+    if (const auto preset = assign["preset"].toString(); preset.isNotEmpty() && preset != "auto")
+        if (auto* tp = findTonePreset (preset))
         {
-            add ("drive", { { "drive", 0.25 }, { "tone", 3500.0 }, { "level", 2.0 }, { "mix", 1.0 } });
-            amp (0.62, 3, 7, 5);
-            add ("delay", { { "division", 0.0 }, { "ms", 380.0 }, { "feedback", 0.28 }, { "mix", 0.2 } });
-            add ("reverb", { { "size", 0.5 }, { "mix", 0.18 } });
+            addPreset (*tp);
+            return chain;
         }
-        else if (preset == "bass")    { amp (0.15, 7, 5, 4); }
-        if (! chain.isEmpty()) return chain;
-    }
 
     // the rig, if the pack describes it
     juce::var rig;
@@ -1725,23 +1773,55 @@ juce::Array<juce::var> EngineApi::chainForTone (const juce::String& rigId, const
     const bool assignedFullRig = assign["gear"].toString().contains ("full") || assign["gear"].toString().contains ("cab");
 
     bool hasAmp = false, ampIsCapture = false, hasCab = false, hasReverb = false;
+    juce::String ampLabel;
+    double eqLow = 0, eqMid = 0, eqHigh = 0;   // the song's EQ pedals and racks, added up into one EQ
+    bool hasEq = false;
     if (auto* blocks = rig["blocks"].getArray())
     {
+        // Packs converted from Rocksmith name the gear ("Amp_MarshallJCM800", "Pedal_ValveEcho") and
+        // write knobs as players see them ("Gain": 35 out of 100); others use 0..1. Read both.
+        for (auto& b : *blocks)
+            if (lower (b["name"]).contains ("acousticemulator") && ! bass)
+            {
+                addPreset (*findTonePreset ("acoustic"));
+                return chain;
+            }
         for (auto& b : *blocks)
         {
             if ((bool) b["bypassed"]) continue;
             const auto role = lower (b["role"]);
-            const auto& prm = b["params"];
-            const auto family = lower (b["intent"]["family"]) + " " + lower (b["name"]);
-            if (role == "drive" || role == "boost" || role == "fuzz" || role == "distortion")
+            const auto gear = lower (b["name"]);
+            const auto family = lower (b["intent"]["family"]) + " " + gear;
+            const auto* po = b["params"].getDynamicObject();
+            bool percent = false;   // knobs out of 100?
+            if (po != nullptr)
+                for (auto& nv : po->getProperties()) if (std::abs (num (nv.value, 0)) > 1.5 && ! nv.name.toString().containsIgnoreCase ("freq")
+                                                         && ! nv.name.toString().containsIgnoreCase ("time") && ! nv.name.toString().containsIgnoreCase ("release")
+                                                         && ! nv.name.toString().containsIgnoreCase ("attack") && ! nv.name.toString().containsIgnoreCase ("thresh")) percent = true;
+            // a knob by name, whatever its case and prefix ("Pedal_EQ5_250", "Gain", "gain"), as 0..1
+            auto raw = [po] (std::initializer_list<const char*> names, double def) -> double
             {
-                const double drv = num (prm["drive"], num (prm["gain"], 0.5));
-                add ("drive", { { "drive", drv }, { "tone", 800.0 * std::pow (15.0, num (prm["tone"], 0.5)) },
-                                { "level", -12.0 + 18.0 * num (prm["level"], 0.6) } });
-            }
-            else if (role == "amp" && ! hasAmp)
+                if (po == nullptr) return def;
+                for (auto* n : names)
+                    for (auto& nv : po->getProperties())
+                    {
+                        const auto key = nv.name.toString().toLowerCase();
+                        if (key == n || key.endsWith (juce::String ("_") + n)) return num (nv.value, def);
+                    }
+                return def;
+            };
+            auto knob = [&] (std::initializer_list<const char*> names, double def)
+            {
+                const double v = raw (names, -1.0e9);
+                if (v < -1.0e8) return def;
+                return juce::jlimit (0.0, 1.0, percent ? v / 100.0 : v);
+            };
+            auto is = [&gear, &role] (std::initializer_list<const char*> words) { for (auto* w : words) if (gear.contains (w) || role == w) return true; return false; };
+
+            if (role == "amp" && ! hasAmp)
             {
                 hasAmp = true;
+                ampLabel = b["name"].toString().fromFirstOccurrenceOf ("Amp_", false, true).replace ("_", " ");
                 juce::String capture = assignedFile;
                 if (capture.isEmpty())
                     if (auto* rs = b["realizations"].getArray())
@@ -1754,10 +1834,27 @@ juce::Array<juce::var> EngineApi::chainForTone (const juce::String& rigId, const
                 }
                 else
                 {
-                    double gain = num (prm["gain"], -1);
-                    if (gain < 0) gain = family.contains ("clean") ? 0.2 : family.contains ("hi-gain") || family.contains ("high") ? 0.8 : 0.5;
-                    add ("amp", { { "gain", gain }, { "bass", (num (prm["bass"], 0.5) - 0.5) * 24 }, { "mid", (num (prm["mid"], 0.5) - 0.5) * 24 },
-                                  { "treble", (num (prm["treble"], 0.5) - 0.5) * 24 }, { "cab", 1.0 }, { "master", -8.0 } });
+                    // How distorted it really sounds depends on the amp, not only on its gain knob:
+                    // a JCM800 at 35 is already rock, a Fender-style amp at 35 is still clean.
+                    const double g = knob ({ "gain", "drive" }, -1.0);
+                    double drive;
+                    if (g < 0)
+                        drive = family.contains ("clean") ? 0.15 : family.contains ("hi-gain") || family.contains ("high") ? 0.85 : 0.5;
+                    else if (bass || gear.contains ("bass") || gear.contains ("di_"))
+                        drive = 0.03 + 0.6 * std::pow (g, 1.5);
+                    else if (gear.contains ("dsl") || gear.contains ("hg") || gear.contains ("gb") || gear.contains ("5150") || gear.contains ("recti") || gear.contains ("mesa"))
+                        drive = 0.05 + 0.95 * std::pow (g, 0.8);           // high-gain amps
+                    else if (gear.contains ("jcm") || gear.contains ("plexi") || gear.contains ("marshall"))
+                        drive = 0.1 + 0.85 * std::pow (g, 0.6);            // British rock amps
+                    else
+                        drive = 0.03 + 0.85 * std::pow (g, 1.3);           // vintage amps (Fender, Vox, Matchless…) and unknown ones
+                    drive = juce::jlimit (0.02, 1.0, drive);
+                    // EQ knobs: what players set, but gentler, because Galpon's amp already sounds like one
+                    auto tilt = [&] (std::initializer_list<const char*> names) { return (knob (names, 0.5) - 0.5) * 12.0; };
+                    if (drive > 0.88 && ! bass)
+                        add ("drive", { { "drive", 0.12 }, { "tone", 3800.0 }, { "level", 4.0 }, { "mix", 1.0 } });   // the boost players put in front
+                    add ("amp", { { "gain", juce::jmin (1.0, drive) }, { "bass", tilt ({ "bass" }) }, { "mid", tilt ({ "mid", "middle" }) },
+                                  { "treble", tilt ({ "treble" }) * 0.8 }, { "cab", 1.0 }, { "master", bass ? -6.0 : -8.0 } });
                 }
             }
             else if (role == "cab")
@@ -1769,25 +1866,52 @@ juce::Array<juce::var> EngineApi::chainForTone (const juce::String& rigId, const
                     for (auto& rz : *rs) if (rz["engine"].toString() == "ir" && ir.isEmpty()) ir = fromPack (rz["ref"].toString());
                 add ("cab", {}, ir);
             }
-            else if (role == "delay")
+            else if (is ({ "chorus", "flanger", "phaser", "rotat", "vibe", "modulation" }))
+                add ("chorus", { { "rate", 0.2 + 3.0 * knob ({ "rate", "speed" }, 0.3) }, { "depth", knob ({ "depth" }, 0.4) }, { "mix", knob ({ "mix" }, 0.4) } });
+            else if (is ({ "echo", "delay" }))
             {
-                const auto& tm = prm["time"].isVoid() ? b["realizations"][0]["params"]["time"] : prm["time"];
-                double ms = num (tm, 350);
-                if (tm["unit"].toString() == "s") ms *= 1000;
-                add ("delay", { { "division", 0.0 }, { "ms", juce::jlimit (10.0, 2000.0, ms) }, { "feedback", juce::jlimit (0.0, 0.9, num (prm["feedback"], 0.3)) },
-                                { "mix", juce::jlimit (0.0, 1.0, num (b["mix"], num (prm["mix"], 0.25))) } });
+                double ms = raw ({ "time" }, -1);
+                if (ms < 0) { const auto& tm = b["realizations"][0]["params"]["time"]; ms = num (tm, 350); if (tm["unit"].toString() == "s") ms *= 1000; }
+                else if (ms < 5) ms *= 1000;   // seconds
+                add ("delay", { { "division", 0.0 }, { "ms", juce::jlimit (10.0, 2000.0, ms) }, { "feedback", juce::jlimit (0.0, 0.85, knob ({ "feedback" }, 0.3)) },
+                                { "mix", juce::jlimit (0.0, 0.6, num (b["mix"], knob ({ "mix" }, 0.25))) } });
             }
-            else if (role == "reverb")
+            else if (is ({ "reverb", "verb", "plate", "chamber", "hall", "spring" }))
             {
                 hasReverb = true;
-                add ("reverb", { { "size", num (prm["size"], num (prm["decay"], 0.5)) }, { "mix", juce::jlimit (0.0, 1.0, num (b["mix"], num (prm["mix"], 0.25))) } });
+                add ("reverb", { { "size", knob ({ "time", "size", "decay" }, 0.5) }, { "mix", juce::jlimit (0.0, 0.5, num (b["mix"], knob ({ "mix" }, 0.25)) * 0.7) } });
             }
-            else if (role == "chorus" || role == "modulation" || role == "mod" || role == "flanger" || role == "phaser")
-                add ("chorus", { { "rate", 0.2 + 3.0 * num (prm["rate"], 0.3) }, { "depth", num (prm["depth"], 0.4) }, { "mix", num (b["mix"], 0.5) } });
-            else if (role == "compressor" || role == "comp")
+            else if (is ({ "drive", "fuzz", "dist", "boost", "screamer", "overdrive", "swole", "octavius", "muff" }) || (role == "pedal" && raw ({ "gain", "drive" }, -1) >= 0))
+            {
+                const double drv = knob ({ "drive", "gain", "fuzz", "smash" }, 0.5);
+                const bool isFuzz = gear.contains ("fuzz") || gear.contains ("swole") || gear.contains ("octavius") || gear.contains ("muff") || gear.contains ("germanium");
+                add ("drive", { { "drive", isFuzz ? 0.35 + 0.6 * drv : 0.08 + 0.5 * drv }, { "tone", 800.0 * std::pow (6.0, knob ({ "tone" }, 0.5)) },
+                                { "level", isFuzz ? 0.0 : 3.0 }, { "mix", 1.0 } });
+            }
+            else if (is ({ "compress", "comp", "mbcomp" }) || (role == "dynamics" && raw ({ "ratio", "compress", "comp" }, -1) >= 0))
                 add ("comp", {});
+            else if (gear.contains ("eq5"))
+            {
+                // five sliders in dB (63, 250, 750, 2200, 5700 Hz)
+                hasEq = true;
+                eqLow += 0.5 * (raw ({ "63" }, 0) + raw ({ "250" }, 0));
+                eqMid += raw ({ "750" }, 0);
+                eqHigh += 0.5 * (raw ({ "2200" }, 0) + raw ({ "5700" }, 0));
+            }
+            else if (gear.contains ("studioeq") || gear.contains ("graphiceq") || role == "eq")
+            {
+                hasEq = true;
+                eqLow += raw ({ "bass" }, 0);
+                eqMid += 0.5 * (raw ({ "lomid" }, 0) + raw ({ "himid" }, 0)) + raw ({ "mid" }, 0);
+                eqHigh += raw ({ "treble" }, 0);
+            }
+            // wahs, tremolos, octavers and lo-fi filters: Galpon doesn't have them yet; the sound is close enough without
         }
     }
+    if (hasEq && (std::abs (eqLow) + std::abs (eqMid) + std::abs (eqHigh)) > 0.5)
+        add ("eq", { { "lowcut", bass ? 30.0 : 70.0 }, { "low", juce::jlimit (-8.0, 8.0, eqLow) }, { "mid", juce::jlimit (-8.0, 8.0, eqMid) }, { "high", juce::jlimit (-8.0, 8.0, eqHigh) } });
+    if (hasAmp && ampLabel.isNotEmpty() && chain.size() > 0)
+        if (auto* o = chain[0].getDynamicObject()) o->setProperty ("preset", juce::String::fromUTF8 ("El equipo de la canción: ") + ampLabel);
     if (! hasAmp)
     {
         // no rig: guess from the tone's name
@@ -1798,24 +1922,10 @@ juce::Array<juce::var> EngineApi::chainForTone (const juce::String& rigId, const
         }
         else
         {
-            // What the name says, if it says anything; otherwise what the song's guitar sounds like
-            const bool saysClean = name.contains ("clean") || name.contains ("limpi") || name.contains ("acoustic") || name.contains (juce::String (u8"acústic"));
-            double gain = -1;
-            if (saysClean) gain = bass ? 0.15 : 0.18;
-            else if (name.contains ("crunch") || name.contains ("rhythm") || name.contains ("ritm")) gain = 0.62;
-            else if (name.contains ("dist") || name.contains ("drive") || name.contains ("metal") || name.contains ("heavy") || name.contains ("gain") || name.contains ("fuzz")) gain = 0.88;
-            if (gain < 0 && heardDrive >= 0.0f)
-                gain = bass ? 0.15 + 0.5 * heardDrive : heardDrive < 0.25f ? 0.2 : 0.45 + 0.48 * heardDrive;
-            if (gain < 0)
-                gain = (name.contains ("lead") || name.contains ("solo")) ? 0.78 : bass ? 0.25 : 0.62;   // most songs with tones are rock: crunch, not clean
-            else if (! saysClean && (name.contains ("lead") || name.contains ("solo"))) gain = juce::jmax (gain, 0.75);
-            if (! bass && (name.contains ("lead") || name.contains ("solo")) && ! saysClean)
-                add ("drive", { { "drive", 0.3 }, { "tone", 3500.0 }, { "level", 0.0 } });
-            add ("amp", { { "gain", gain }, { "bass", bass ? 3.0 : 0.0 }, { "mid", 0.0 }, { "treble", bass ? -2.0 : 0.0 }, { "cab", 1.0 }, { "master", -8.0 } });
-            if (! bass && (name.contains ("lead") || name.contains ("solo")))
-                add ("delay", { { "division", 0.0 }, { "ms", 380.0 }, { "feedback", 0.25 }, { "mix", 0.18 } });
-            if (! bass && (name.contains ("chorus") || saysClean))
-                add ("chorus", { { "rate", 0.7 }, { "depth", 0.3 }, { "mix", name.contains ("chorus") ? 0.5 : 0.25 } });
+            // No rig: the closest of Galpon's sounds to what the name says, or to how distorted the
+            // song's guitar sounds
+            addPreset (closestTonePreset (heardDrive, toneName, bass));
+            return chain;
         }
     }
     if (! bass && ! hasReverb)
@@ -1870,6 +1980,7 @@ juce::var EngineApi::gameTone (const juce::var& args)
     }
     gameToneTrackId = t->id;
     engine.addInsert (t->id, "builtin", "gate", -1);
+    if (std::abs (gameRetuneSemis) > 0.001f) setRetune (t->id, gameRetuneSemis, 1);
 
     gameRigs.clear();
     gameToneSchedule.clear();
@@ -1903,6 +2014,7 @@ juce::var EngineApi::gameTone (const juce::var& args)
             juce::StringArray what;
             for (auto& c : chain)
             {
+                if (c["type"].toString() == "gate") continue;   // the track already starts with one
                 if (engine.addInsert (t->id, "builtin", c["type"].toString(), -1).failed()) continue;
                 auto* slot = engine.findSlot (t->id, (int) t->inserts.size() - 1);
                 auto* b = slot != nullptr ? dynamic_cast<BuiltinProcessor*> (slot->processor.get()) : nullptr;
@@ -1918,7 +2030,7 @@ juce::var EngineApi::gameTone (const juce::var& args)
             auto* o = new juce::DynamicObject();
             o->setProperty ("key", key);
             o->setProperty ("name", u.name);
-            o->setProperty ("chain", what.joinIntoString (" · "));
+            o->setProperty ("chain", chain.size() > 0 && chain[0]["preset"].toString().isNotEmpty() ? chain[0]["preset"].toString() + " (" + what.joinIntoString (" · ") + ")" : what.joinIntoString (" · "));
             o->setProperty ("capture", assign["file"].toString().isNotEmpty());
             if (drive >= 0) o->setProperty ("heard", drive < 0.25f ? "limpia" : drive < 0.6f ? "crunch" : "distorsionada");
             report.add (juce::var (o));
@@ -1937,6 +2049,36 @@ juce::var EngineApi::gameTone (const juce::var& args)
     for (auto& sch : gameToneSchedule) times.add (juce::Array<juce::var> { sch.first, gameRigs[(size_t) sch.second].name });
     o->setProperty ("changes", times);
     return ok (juce::var (o));
+}
+
+int EngineApi::setRetune (int trackId, float semitones, int index)
+{
+    auto* t = engine.song.findTrack (trackId);
+    if (t == nullptr) return 0;
+    int at = -1;
+    for (size_t i = 0; i < t->inserts.size(); ++i)
+        if (auto* b = dynamic_cast<BuiltinProcessor*> (t->inserts[i].processor.get()); b != nullptr && b->getTypeId() == "retune") { at = (int) i; break; }
+    if (std::abs (semitones) < 0.001f)
+    {
+        if (at < 0) return 0;
+        engine.removeInsert (trackId, at);
+        return -1;
+    }
+    int gained = 0;
+    if (at < 0)
+    {
+        at = juce::jlimit (0, (int) t->inserts.size(), index);
+        if (engine.addInsert (trackId, "builtin", "retune", at).failed()) return 0;
+        gained = 1;
+    }
+    if (auto* slot = engine.findSlot (trackId, at))
+        if (auto* b = dynamic_cast<BuiltinProcessor*> (slot->processor.get()))
+        {
+            b->setReal ("semitones", juce::jlimit (-7.0f, 7.0f, semitones));
+            const juce::ScopedLock sl (engine.lock);
+            slot->bypass = false;
+        }
+    return gained;
 }
 
 void EngineApi::applyGameTone()

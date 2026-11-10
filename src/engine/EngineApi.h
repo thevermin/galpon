@@ -73,6 +73,11 @@ private:
     int gameToneTrackId = 0, gameActiveRig = -1;
     bool gameToneOn = false;
     std::pair<int, bool> gameMonitorBackup { 0, false };
+    // "virtual tuning": the guitar shifted by this many semitones (0 = off)
+    float gameRetuneSemis = 0.0f;
+    /** Puts (or updates, or with 0 removes) the virtual-tuning effect on a track, at `index` if new.
+        Returns how many effects the track gained (+1), lost (-1) or 0. */
+    int setRetune (int trackId, float semitones, int index = 0);
     int stateVersion = 1;
     std::map<juce::String, juce::var> waveformCache;
 };

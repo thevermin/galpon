@@ -7,7 +7,7 @@
 - **Windows**: baja el instalador desde [Releases](../../releases), o el último build desde [Actions](../../actions).
 - **Mac**: se compila en un par de comandos (ver [Compilar](#compilar)).
 
-Versión actual: **0.12**.
+Versión actual: **0.13**.
 
 ---
 
@@ -19,7 +19,10 @@ Versión actual: **0.12**.
 - **Cualquier interfaz de audio**: CoreAudio en Mac; WASAPI y **ASIO** en Windows. Puedes elegir entrada y salida por separado, frecuencia, búfer, canales, entrada mono o estéreo y monitoreo por pista.
 - **Latencia** visible (entrada, salida, ida y vuelta) y compensada al grabar, con ajuste manual.
 - **Instrumentos propios**: piano, piano eléctrico, órgano, sintetizador y batería. Hay un **sampler** SFZ con instrumentos grabados que se descargan con un clic: piano de cola, batería acústica, bajo y guitarra acústica.
-- **Efectos propios**: ecualizador, compresor, puerta de ruido, distorsión, amplificador, **Amp NAM** (capturas `.nam`), gabinete IR, chorus, delay y reverb.
+- **Efectos propios**: ecualizador, compresor, puerta de ruido, distorsión, amplificador, **Amp NAM** (capturas `.nam`), gabinete IR, chorus, delay, reverb y **afinación virtual**.
+- **20 sonidos listos de guitarra y bajo** (limpios, crunch, distorsión, alta ganancia, solos y bajo), los mismos que usa el modo Juego.
+- **Afinador** al estilo de Rocksmith: el nombre de la afinación, la nota de cada cuerda con su color (la que tocas se ilumina), un medidor de − a +, referencia A ajustable, 16 afinaciones conocidas (Drop D, Eb, Drop C, Open G, DADGAD…) o cuerda por cuerda, y cejilla.
+- **Afinación virtual**: con la guitarra en estándar suena, por ejemplo, un tono más grave. Para Drop C alcanza con bajar la sexta a Re. Agrega unos 25 ms de demora y nunca suena igual que afinar de verdad, pero sirve para probar una canción rápido.
 - **Plugins AU y VST3**, con su propia ventana y compensación de demora.
 - **Baterista automático** con más de 35 estilos en 8 géneros (rock, metal, pop, funk y soul, hip hop y electrónica, latino, jazz y blues, country y folk): punk, thrash con doble bombo, death metal con blast beat, trap, cumbia, cuarteto, bossa, reggae y más. Sencillo/complejo, suave/fuerte, redobles y swing. Toca como una persona: mantiene un groove, lo varía al final de cada frase y hace redobles distintos. Escucha la guitarra o el bajo que grabaste: marca sus golpes con el bombo y toca más fuerte o más suave según cómo toques.
 - **La canción por partes**: el baterista arranca con la canción armada (intro, estrofa, estribillo, estrofa, estribillo, puente, estribillo y final), una región por parte. Cada una se alarga, se mueve o se genera de nuevo sin tocar las demás. Toca cada parte distinto, entra con un platillo, hace un redoble antes de cada cambio y termina con un golpe final.
@@ -56,8 +59,8 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 - **Te escucha y te da puntos**: reconoce las notas y acordes que tocas, si llegaste a tiempo y si mantuviste las notas largas. Lleva racha, multiplicador y precisión. Al final ves un resumen por parte y puedes practicar la parte que más te costó.
 - **Práctica**: más despacio sin cambiar el tono (30–100 %), repetir A–B o una parte entera.
 - **Volumen** del Master, de cada instrumento de la canción y de tu guitarra. Hay un atajo para bajar o quitar la guitarra (o el bajo) de la grabación y escucharte mejor, y puedes elegir cuánto baja la canción cuando tocas fuerte.
-- **Sonido automático**: arma los efectos que pide cada parte (limpio, distorsión, solo…) y los cambia solo. Si el nombre del sonido no lo dice, escucha la guitarra de la canción para saber cuánta distorsión lleva. También puedes elegir a mano, para cada parte, uno de los sonidos de Galpon (limpio, chorus, acústico, crunch, distorsión, alta ganancia, solo) o uno de tus tonos de TONE3000. Si conectas tu cuenta de **TONE3000**, usa las capturas que marcaste como favoritas.
-- Afinador con la afinación de la canción y ajuste de sincronía.
+- **Sonido automático**: arma los efectos que pide cada parte (limpio, distorsión, solo…) y los cambia solo. Lee el equipo que trae la canción (el amplificador y sus perillas, pedales, eco, reverb y ecualización) y tiene en cuenta que un Marshall con poca ganancia ya distorsiona y un Fender no. Si la canción no trae el equipo, elige el más parecido de los 20 sonidos de Galpon por el nombre o escuchando la guitarra de la canción. También puedes elegir a mano, para cada parte, uno de los sonidos de Galpon o uno de tus tonos de TONE3000. Si conectas tu cuenta de **TONE3000**, usa las capturas que marcaste como favoritas.
+- Afinador con la afinación y la cejilla de la canción, **afinación virtual** (el puntaje la tiene en cuenta) y ajuste de sincronía.
 
 ## Atajos
 

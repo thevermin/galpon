@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 # Universal binary on Mac is optional; by default we build for the machine you are on.
-project(Galpon VERSION 0.12.0 LANGUAGES C CXX)
+project(Galpon VERSION 0.13.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,6 +31,8 @@ set(GALPON_ENGINE_SOURCES
     src/engine/Model.cpp
     src/engine/BuiltinInstruments.cpp
     src/engine/BuiltinEffects.cpp
+    src/engine/ToneLibrary.cpp
+    src/engine/RetuneEffect.cpp
     src/engine/NamAmp.cpp
     src/engine/Drummer.cpp
     src/engine/PluginHost.cpp

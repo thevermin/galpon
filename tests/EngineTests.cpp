@@ -16,6 +16,7 @@
 #include "engine/Feedpak.h"
 #include "engine/GamePlayer.h"
 #include "engine/NoteScorer.h"
+#include "engine/ToneLibrary.h"
 
 using namespace galpon;
 
@@ -586,6 +587,85 @@ static void testGuitarTone()
         cab->processBlock (blk, midi);
     }
     CHECK (fizz (noise) < before * 0.15, "el gabinete sin archivo IR igual corta los agudos como un parlante");
+}
+
+static void testRetuneAndPresets()
+{
+    std::cout << "Afinación virtual y sonidos listos\n";
+    const double sr = 48000;
+    auto pitchAfter = [&] (float semis)
+    {
+        auto fx = createBuiltin ("retune");
+        auto* b = dynamic_cast<BuiltinProcessor*> (fx.get());
+        b->setReal ("semitones", semis);
+        fx->prepareToPlay (sr, 256);
+        juce::AudioBuffer<float> buf (2, (int) sr);
+        for (int i = 0; i < buf.getNumSamples(); ++i)
+        {
+            const float ph = juce::MathConstants<float>::twoPi * 220.0f * i / (float) sr;
+            const float v = 0.25f * std::sin (ph) + 0.15f * std::sin (2 * ph + 0.3f) + 0.1f * std::sin (3 * ph + 1.1f) + 0.05f * std::sin (4 * ph);   // a string: harmonics, not a pure tone
+            buf.setSample (0, i, v); buf.setSample (1, i, v);
+        }
+        juce::MidiBuffer midi;
+        for (int i = 0; i < buf.getNumSamples(); i += 256)
+        {
+            juce::AudioBuffer<float> blk (buf.getArrayOfWritePointers(), 2, i, juce::jmin (256, buf.getNumSamples() - i));
+            fx->processBlock (blk, midi);
+        }
+        // the strongest frequency in the second half (a fine scan, so it isn't limited to FFT bins)
+        const int from = buf.getNumSamples() / 2, len = buf.getNumSamples() - from;
+        double f = 0.0, best = -1.0;
+        for (double hz = 80.0; hz < 300.0; hz += 0.25)
+        {
+            double re = 0, im = 0;
+            for (int i = 0; i < len; i += 2)
+            {
+                const double w = 0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * i / len);
+                const double ph = juce::MathConstants<double>::twoPi * hz * i / sr;
+                re += w * buf.getSample (0, from + i) * std::cos (ph); im += w * buf.getSample (0, from + i) * std::sin (ph);
+            }
+            if (re * re + im * im > best) { best = re * re + im * im; f = hz; }
+        }
+        return std::make_pair (f, fx->getLatencySamples());
+    };
+    auto [down2, lat] = pitchAfter (-2.0f);
+    auto [down12, lat12] = pitchAfter (-7.0f);
+    auto [down5, lat5] = pitchAfter (-5.0f);
+    auto [up3, lat3] = pitchAfter (3.0f);
+    juce::ignoreUnused (lat12, lat5, lat3);
+    CHECK (std::abs (up3 - 220.0 * std::pow (2.0, 3.0 / 12.0)) < 2.0, "tres semitonos arriba: " << up3 << " Hz");
+    CHECK (std::abs (down5 - 220.0 * std::pow (2.0, -5.0 / 12.0)) < 2.0, "cinco semitonos abajo (Drop A): " << down5 << " Hz");
+    const double want2 = 220.0 * std::pow (2.0, -2.0 / 12.0);
+    CHECK (std::abs (down2 - want2) < 2.0, "dos semitonos abajo: 220 Hz suena a " << down2 << " Hz (debería " << want2 << ")");
+    CHECK (std::abs (down12 - 220.0 * std::pow (2.0, -7.0 / 12.0)) < 2.0, "siete semitonos abajo (lo máximo): " << down12 << " Hz");
+    CHECK (lat > 0 && lat < (int) (sr * 0.06), "la afinación virtual agrega poca demora (" << lat * 1000.0 / sr << " ms)");
+
+    // presets: all exist as effects, and the closest one makes sense
+    for (auto& p : tonePresets())
+        for (auto& st : p.chain)
+            CHECK (createBuiltin (st.type) != nullptr, p.id << " usa un efecto que existe (" << st.type << ")");
+    CHECK (closestTonePreset (0.05f, "", false).id == "clean", "una guitarra limpia elige el limpio");
+    CHECK (closestTonePreset (0.95f, "", false).drive > 0.85f, "una guitarra muy distorsionada elige alta ganancia");
+    CHECK (closestTonePreset (-1.0f, "acoustic_strum", false).id == "acoustic", "el nombre «acoustic» elige el acústico");
+    CHECK (closestTonePreset (-1.0f, "Solo", false).lead, "un solo elige un sonido de solo");
+    CHECK (closestTonePreset (0.1f, "", true).bass, "el bajo elige un sonido de bajo");
+
+    TestEngine t;
+    auto* a = t.engine.addTrack (TrackKind::Audio);
+    auto r = t.api.call ("applyTonePreset", juce::JSON::parse ("{\"trackId\":" + juce::String (a->id) + ",\"id\":\"hardrock\"}"));
+    juce::StringArray types;
+    for (auto& ins : a->inserts) if (auto* bp = dynamic_cast<BuiltinProcessor*> (ins.processor.get())) types.add (bp->getTypeId());
+    CHECK (types.contains ("amp") && types.contains ("gate"), "aplicar «Hard rock» pone la cadena en la pista (" << types.joinIntoString (", ") << ")");
+    auto bad = t.api.call ("applyTonePreset", juce::JSON::parse ("{\"trackId\":" + juce::String (a->id) + ",\"id\":\"nada\"}"));
+    CHECK (bad.hasProperty ("error"), "un sonido que no existe da error");
+    t.api.call ("setRetune", juce::JSON::parse ("{\"trackId\":" + juce::String (a->id) + ",\"semitones\":-2}"));
+    auto firstType = [&] { auto* bp = a->inserts.empty() ? nullptr : dynamic_cast<BuiltinProcessor*> (a->inserts[0].processor.get()); return bp ? bp->getTypeId() + ":" + juce::String (bp->get ("semitones")) : juce::String(); };
+    CHECK (firstType() == "retune:-2", "la afinación virtual va primera en la cadena (" << firstType() << ")");
+    t.api.call ("setRetune", juce::JSON::parse ("{\"trackId\":" + juce::String (a->id) + ",\"semitones\":-4}"));
+    int count = 0; for (auto& ins : a->inserts) if (auto* bp = dynamic_cast<BuiltinProcessor*> (ins.processor.get()); bp && bp->getTypeId() == "retune") ++count;
+    CHECK (count == 1 && firstType() == "retune:-4", "cambiarla no agrega otra");
+    t.api.call ("setRetune", juce::JSON::parse ("{\"trackId\":" + juce::String (a->id) + ",\"semitones\":0}"));
+    CHECK (firstType() != "retune:-4" && ! firstType().startsWith ("retune"), "en 0 se saca");
 }
 
 static void testRecording()
@@ -2261,6 +2341,40 @@ static void testFeedpak()
                    "se puede elegir un sonido de Galpon para una parte (" << picked["data"]["tones"][1]["chain"].toString() << ")");
         }
         t.api.call ("gameTone", juce::JSON::parse ("{\"on\":false}"));
+        // Rigs written like the ones converted from Rocksmith: gear by name, knobs out of 100
+        {
+            auto dir = tempRoot().getChildFile ("rs-style.feedpak");
+            dir.deleteRecursively();
+            data.getChildFile ("extended.feedpak").copyDirectoryTo (dir);
+            dir.getChildFile ("rigs.json").replaceWithText (R"({ "version": 1, "rigs": [
+              { "id": "clean-rhythm", "name": "x_clean", "instrument": "guitar", "blocks": [
+                { "id": "amp", "role": "amp", "name": "Amp_MarshallDSL100H", "params": { "Gain": 1.0, "Bass": 75.0, "Mid": 38.0, "Treble": 66.0 } },
+                { "id": "cab", "role": "cab", "name": "Cab_Marshall1960a_57_Edge", "params": {} } ] },
+              { "id": "lead-drive", "name": "x_dist", "instrument": "guitar", "blocks": [
+                { "id": "eq", "role": "filter", "name": "Pedal_EQ5", "params": { "Pedal_EQ5_63": -3.0, "Pedal_EQ5_250": -2.0, "Pedal_EQ5_750": 2.0, "Pedal_EQ5_2200": 1.0, "Pedal_EQ5_5700": 0.0 } },
+                { "id": "amp", "role": "amp", "name": "Amp_MarshallJCM800", "params": { "Gain": 35.0, "Bass": 100.0, "Mid": 100.0, "Treble": 100.0 } },
+                { "id": "dly", "role": "delay", "name": "Pedal_ValveEcho", "params": { "Time": 450.0, "Feedback": 35.0, "Mix": 35.0 } } ] } ] })");
+            auto op = t.api.call ("gameOpen", juce::JSON::parse ("{\"path\":" + juce::JSON::toString (dir.getFullPathName()) + "}"));
+            auto rs = t.api.call ("gameTone", juce::JSON::parse ("{\"on\":true,\"arrangement\":\"lead\"}"));
+            auto* rt = t.engine.song.findTrack ((int) rs["data"]["trackId"]);
+            std::vector<float> gains; float delayMs = 0;
+            if (rt != nullptr)
+                for (auto& sl : rt->inserts)
+                    if (auto* b = dynamic_cast<BuiltinProcessor*> (sl.processor.get()))
+                    {
+                        if (b->getTypeId() == "amp") gains.push_back (b->get ("gain"));
+                        if (b->getTypeId() == "delay") delayMs = b->get ("ms");
+                    }
+            CHECK ((bool) op["ok"] && (bool) rs["ok"] && gains.size() == 2, "lee los equipos con nombres y perillas de 0 a 100: " << rs["error"].toString() << op["error"].toString());
+            if (gains.size() == 2)
+            {
+                CHECK (gains[0] < 0.15f, "un DSL100H con la ganancia en 1 suena limpio (" << gains[0] << ")");
+                CHECK (gains[1] > 0.5f && gains[1] < 0.8f, "un JCM800 en 35 ya es rock (" << gains[1] << ")");
+            }
+            CHECK (std::abs (delayMs - 450.0f) < 1.0f, "el eco de la canción con su tiempo (" << delayMs << " ms)");
+            CHECK (rs["data"]["tones"][1]["chain"].toString().contains ("JCM800"), "dice qué equipo usa (" << rs["data"]["tones"][1]["chain"].toString() << ")");
+            t.api.call ("gameTone", juce::JSON::parse ("{\"on\":false}"));
+        }
         CHECK ((int) t.engine.song.tracks.size() == tracksBefore && t.engine.song.findTrack (gt->id)->monitor, "apagarlo deja todo como antes");
         CHECK ((bool) t.api.call ("gameStemVolume", juce::JSON::parse ("{\"id\":\"drums\",\"gain\":0.5}"))["ok"]
                && (bool) t.api.call ("gameVolume", juce::JSON::parse ("{\"gain\":0.8}"))["ok"], "volumen de cada instrumento y de la canción");
@@ -2460,6 +2574,7 @@ int main()
     testDrummerStyles();
     testRealDrums();
     testGuitarTone();
+    testRetuneAndPresets();
     testRecording();
     testRecordingSafety();
     testSaveLoadUndoExport();

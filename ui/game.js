@@ -33,6 +33,7 @@
     soft:    ['#e88a8a', '#e8d27a', '#7fa8e8', '#e8b07a', '#86d1a0', '#b99be8', '#a7b0bd', '#d8dde4'],
   };
   const colour = (s) => PALETTES[opts.palette][s] || '#ccc';
+  G.stringColour = colour;   // the tuner uses the same colours
 
   // ------------------------------------------------------------------ tunings
   const NOTE = new Proxy([], { get: (_, i) => (/^\d+$/.test(String(i)) ? G.pcName(+i) : undefined) });   // C D E… or Do Re Mi…
@@ -55,16 +56,11 @@
   }
   function tuningName(arr) {
     const t = (arr.tuning && arr.tuning.length) ? arr.tuning : [0, 0, 0, 0, 0, 0];
-    const same = t.every((v) => v === t[0]);
-    let name;
-    if (same && t[0] === 0) name = 'Estándar';
-    else if (same && t[0] === -1) name = 'Medio tono abajo';
-    else if (same && t[0] === -2) name = 'Un tono abajo';
-    else if (t[0] === -2 && t.slice(1).every((v) => v === 0)) name = 'Drop Re';
-    else if (t[0] === -3 && t.slice(1).every((v) => v === -1)) name = 'Drop Do#';
-    else if (t[0] === -4 && t.slice(1).every((v) => v === -2)) name = 'Drop Do';
-    else name = openPitches(Object.assign({}, arr, { capo: 0 })).map((p) => NOTE[p % 12]).join(' ');
+    const bass = isBass(arr);
+    let name = (t.length === (bass ? 4 : 6) || t.length === 6) ? G.tuningName(t, bass) : 'Personalizada';
+    if (name === 'Personalizada') name = openPitches(Object.assign({}, arr, { capo: 0 })).map((p) => NOTE[p % 12]).join(' ');
     if (arr.capo) name += ' · cejilla ' + arr.capo;
+    if (play && play.arr === arr && play.virtualShift) name += ' · virtual';
     return name;
   }
   function kindName(a) {
@@ -304,7 +300,7 @@
   function sendNotes() {
     if (!play) return;
     const a = play.arr;
-    G.call('gameNotes', { events: play.events.map((e) => ({ t: e.t, p: e.p, sus: e.sus, l: e.l, m: e.m })), cents: a.centOffset || 0, offsetMs: opts.detectOffsetMs })
+    G.call('gameNotes', { events: play.events.map((e) => ({ t: e.t, p: e.p, sus: e.sus, l: e.l, m: e.m })), cents: (a.centOffset || 0) - (play.virtualShift || 0) * 100, offsetMs: opts.detectOffsetMs })
       .then((r) => { if (r && r.ok) { play.listening = r.data.listening; updateScoreHud(); } });
   }
 
@@ -487,7 +483,7 @@
 
     const head = el('header.g-playhead', null,
       el('button.icon-btn.g-back', { 'aria-label': 'Volver a la biblioteca', title: 'Volver a la biblioteca', onclick: closeSong }, G.icon('back', 18)),
-      el('div.g-title', null, el('b', { text: p.song.title }), el('div', null, p.ids.length > 1 ? arrSelect : el('span', { text: kindName(a) }), el('small', { text: ' · ' + tuningName(a) }))),
+      el('div.g-title', null, el('b', { text: p.song.title }), el('div', null, p.ids.length > 1 ? arrSelect : el('span', { text: kindName(a) }), el('small.g-tuning', { text: ' · ' + tuningName(a) }))),
       ui.sections,
       ui.hud,
       el('button.icon-btn', { 'aria-label': 'Cómo se lee', title: 'Cómo se lee', onclick: showHelp }, el('b.g-q', { text: '?' })),
@@ -642,7 +638,7 @@
         const t3ok = t3 && t3.connected && (t3.tones || []).length;
         const sel = el('select.g-select', { 'aria-label': 'Sonido para ' + tn.name, onchange: (e) => assignT3(tn, e.target.value) },
           el('option', { value: '', text: 'Automático (lo que pide la canción)' }),
-          el('optgroup', { label: 'Sonidos de Galpon' }, ...TONE_PRESETS.map(([id, name]) => el('option', { value: 'p:' + id, selected: choice === 'p:' + id, text: name }))),
+          ...tonePresetGroups(choice),
           t3ok ? el('optgroup', { label: 'Mis tonos de TONE3000' },
             el('option', { value: 'auto', selected: choice === 'auto', text: 'El que mejor vaya, entre mis tonos' }),
             ...(t3.tones || []).map((t) => el('option', { value: t.id, selected: choice === String(t.id), text: (t.favorite ? '♥ ' : '') + t.title }))) : null);
@@ -684,10 +680,19 @@
   }
 
   /** Galpon's sounds to pick by hand for a part of the song (built from the usual amp settings). */
-  const TONE_PRESETS = [
-    ['clean', 'Limpio'], ['chorus', 'Limpio con chorus'], ['acoustic', 'Acústico'], ['crunch', 'Crunch (rock clásico)'],
-    ['drive', 'Distorsión (hard rock)'], ['highgain', 'Alta ganancia (metal)'], ['lead', 'Solo (con delay)'], ['bass', 'Bajo'],
-  ];
+  /** Galpon's sounds, grouped as in the engine's library ("Limpios", "Crunch", "Distorsión"…) */
+  function tonePresetGroups(choice) {
+    const list = (G.lib && G.lib.tonePresets) || [];
+    const groups = [];
+    for (const tp of list) {
+      if (!!tp.bass !== isBass(play.arr)) continue;
+      let g = groups.find((x) => x.name === tp.group);
+      if (!g) groups.push(g = { name: tp.group, items: [] });
+      g.items.push(tp);
+    }
+    return groups.map((g) => el('optgroup', { label: 'Galpon · ' + g.name },
+      ...g.items.map((tp) => el('option', { value: 'p:' + tp.id, selected: choice === 'p:' + tp.id, text: tp.name, title: tp.description }))));
+  }
 
   /** Words that tell amps apart, to match a song's tone with one of your TONE3000 tones. */
   const FAMILY = {
@@ -798,11 +803,28 @@
     const g = play.guitar;
     if (!g) { if (panel !== 'sound') togglePanel('sound'); G.toast('Primero elige por dónde entra tu guitarra.'); return; }
     G.sel.trackId = g.trackId; G.call('selectTrack', { id: g.trackId });
-    const target = play.pitches.slice().reverse().map((p) => NOTE[p % 12] + (Math.floor(p / 12) - 1)).join('  ');
     if (play.playing) toggle();
-    G.App.showTuner();
-    const note = $('.modal .tuner .note');
-    if (note) note.textContent = 'Afina a: ' + target + ' (de la más aguda a la más grave)';
+    const a = play.arr;
+    const bass = isBass(a);
+    const offsets = ((a.tuning && a.tuning.length) ? a.tuning : [0, 0, 0, 0, 0, 0]).slice(0, bass ? 4 : 6);
+    G.App.showTuner({
+      offsets, bass, capo: a.capo || 0,
+      title: play.song.title + ' · ' + kindName(a),
+      virtualShift: play.virtualShift || 0,
+      note: 'La afinación de esta canción. Toca una cuerda al aire por vez.',
+      onVirtual: (shift) => setVirtual(shift),
+    });
+  }
+
+  /** "Afinación virtual": your guitar sounds `shift` semitones away, so you can play without retuning */
+  async function setVirtual(shift) {
+    const r = await G.call('gameRetune', { semitones: shift });
+    if (!r || !r.ok) { G.toast((r && r.error) || 'No se pudo', true); return; }
+    play.virtualShift = shift;
+    sendNotes();   // the notes you play now sound (and are heard) shifted: so is what to listen for
+    const tl = ui.hwwrap && ui.hwwrap.closest ? document.querySelector('.g-tuning') : null;
+    if (tl) tl.textContent = ' · ' + tuningName(play.arr);
+    G.toast(shift ? 'Afinación virtual: tu guitarra suena ' + Math.abs(shift) + (Math.abs(shift) === 1 ? ' semitono ' : ' semitonos ') + (shift < 0 ? 'más grave' : 'más aguda') : 'Afinación virtual apagada');
   }
 
   // ------------------------------------------------------------------ help & options
@@ -1273,19 +1295,19 @@
     // across more, higher up it comes round towards the middle (the neck turns as you move)
     // Behind the neck and a little above, almost straight down the road (like Rocksmith); a slight
     // turn that follows the hand: low on the neck it looks a bit to the right, higher up straight on
-    // the camera is a bit to the left of the hand, so the road runs off to the right (like Rocksmith);
+    // the camera looks from the right of the hand, so the road runs off to the left (like Rocksmith);
     // higher up the neck it comes round more behind the hand
     const along = Math.min(1, Math.max(0, (cam.x - 3) / 14));
     const side = spanW * (0.16 - 0.08 * along);
-    const C = { x: camW - side, y: spanW * 0.46, z: -spanW * 1.25 };
-    const T = { x: camW + side * 1.6, y: 0, z: spanW * 2.4 };
+    const C = { x: camW + side, y: spanW * 0.46, z: -spanW * 1.25 };
+    const T = { x: camW - side * 1.6, y: 0, z: spanW * 2.4 };
     let F = { x: T.x - C.x, y: T.y - C.y, z: T.z - C.z };
     const fl = Math.hypot(F.x, F.y, F.z); F = { x: F.x / fl, y: F.y / fl, z: F.z / fl };
     let R = { x: F.z, y: 0, z: -F.x };
     const rl = Math.hypot(R.x, R.z); R = { x: R.x / rl, y: 0, z: R.z / rl };
     const U = { x: F.y * R.z - F.z * R.y, y: F.z * R.x - F.x * R.z, z: F.x * R.y - F.y * R.x };
     const focal = Math.min(w * 0.9, h * 1.8) * Math.min(1.2, Math.max(0.85, s));
-    const ox = w * 0.53, oy = h * 0.34;
+    const ox = w * 0.47, oy = h * 0.34;
     /** world (fret X, height Y, seconds ahead) -> screen [x, y, scale] */
     const P = (X, Y, sec) => {
       const dx = FX(X) - C.x, dy = Y - C.y, dz = Math.max(-0.3, sec) * depth - C.z;

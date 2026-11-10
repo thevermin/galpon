@@ -676,24 +676,168 @@
     });
   };
 
-  A.showTuner = function () {
+  // The tuner, after Rocksmith's: the tuning's name, every string with its note (the one you're
+  // playing lights up), a meter that says how far you are, presets or string by string, the capo,
+  // and the "virtual tuning" for when you don't want to retune.
+  const tunerState = (() => {
+    try { const v = JSON.parse(localStorage.getItem('galpon.tuner') || 'null'); if (v && Array.isArray(v.offsets)) return v; } catch (e) { /* no storage */ }
+    return { offsets: [0, 0, 0, 0, 0, 0], bass: false, capo: 0, ref: 440 };
+  })();
+  const saveTuner = () => { try { localStorage.setItem('galpon.tuner', JSON.stringify(tunerState)); } catch (e) { /* no storage */ } };
+  const TUNER_COLOURS = ['#ef4444', '#facc15', '#3b82f6', '#f59e0b', '#22c55e', '#a855f7'];
+
+  /** opts: { offsets, bass, capo, strings, title, virtualShift, onVirtual(shift, byHand) } — from the game, the song's tuning */
+  A.showTuner = function (opts) {
+    opts = opts || {};
+    const st = opts.offsets
+      ? { offsets: opts.offsets.slice(), bass: !!opts.bass, capo: opts.capo || 0, ref: tunerState.ref || 440 }
+      : tunerState;
+    let virtualShift = opts.virtualShift || 0;   // already shifting (the game remembers it)
+    const n = () => (st.bass ? 4 : 6);
+    const colour = (i) => (G.stringColour ? G.stringColour(i) : TUNER_COLOURS[i]) || '#ccc';
+    // what the guitar itself must be tuned to: with the virtual tuning on, only what's left to do by hand
+    const physical = () => {
+      if (!virtualShift) return st.offsets.slice(0, n());
+      const vt = G.virtualTuning(st.offsets, st.bass);
+      return vt ? vt.byHand : st.offsets.slice(0, n());
+    };
+    const targets = () => G.tuningPitches(physical(), st.bass, n());
+    const hz = (midi) => st.ref * Math.pow(2, (midi - 69) / 12);
+    let active = -1, inTuneSince = 0;
+    const done = new Set();
+    let ui = {};
+
     G.call('setTuner', { on: true });
-    let big, detail, needle;
     G.modal('Afinador', (body) => {
-      big = el('div.big', { text: '—' });
-      detail = el('span.note', { text: 'Toca una cuerda. Usa la entrada de la pista de audio seleccionada.' });
-      needle = el('i', { style: { left: '50%' } });
-      body.append(el('div.tuner', null, big, el('div.scale', null, needle), detail));
-    }, { onClose: () => { G.call('setTuner', { on: false }); A.onTuner = null; } });
-    const t = currentTrack();
-    if (!t || t.kind !== 'audio') detail.textContent = 'Elige una pista de audio (la de la guitarra o el bajo) para afinar.';
+      const wrap = el('div.tuner2');
+      body.append(wrap);
+      const draw = () => {
+        wrap.innerHTML = '';
+        const name = G.tuningName(st.offsets, st.bass);
+        const presets = el('select.sel', {
+          'aria-label': 'Afinación', onchange: (e) => {
+            const v = e.target.value;
+            if (v === 'custom') return;
+            st.offsets = G.TUNINGS[+v][1].slice(); done.clear(); virtualShift = 0; saveIt(); draw();
+          },
+        }, ...G.TUNINGS.map(([nm], i) => el('option', { value: i, text: nm, selected: nm === name })),
+          el('option', { value: 'custom', text: 'Personalizada (cuerda por cuerda)', selected: name === 'Personalizada' }));
+        const ref = el('div.t2-ref', null, el('span', { text: 'A' }),
+          el('button.icon-btn', { 'aria-label': 'Bajar la referencia', onclick: () => { st.ref = Math.max(420, st.ref - 1); saveIt(); draw(); } }, '−'),
+          el('b', { text: String(st.ref) }),
+          el('button.icon-btn', { 'aria-label': 'Subir la referencia', onclick: () => { st.ref = Math.min(460, st.ref + 1); saveIt(); draw(); } }, '+'));
+        const kind = el('div.seg', null,
+          el('button.pill' + (!st.bass ? '.on' : ''), { onclick: () => { if (st.bass) { st.bass = false; done.clear(); saveIt(); draw(); } } }, 'Guitarra'),
+          el('button.pill' + (st.bass ? '.on' : ''), { onclick: () => { if (!st.bass) { st.bass = true; done.clear(); saveIt(); draw(); } } }, 'Bajo'));
+
+        const tgs = targets();
+        const phys = physical();
+        const strings = el('div.t2-strings');
+        for (let i = 0; i < n(); i++) {
+          const c = colour(i);
+          const nm = G.noteName ? G.noteName(tgs[i]) : String(tgs[i]);
+          const off = st.offsets[i] || 0;
+          strings.append(el('div.t2-string' + (i === active ? '.on' : '') + (done.has(i) ? '.ok' : ''), { style: { '--c': c } },
+            el('button.t2-step', { 'aria-label': 'Subir medio tono la cuerda ' + (n() - i), title: 'Medio tono más agudo', onclick: () => { st.offsets[i] = Math.min(7, off + 1); done.delete(i); virtualShift = 0; saveIt(); draw(); } }, '▲'),
+            el('div.t2-note', { text: nm.replace(/-?\d+$/, '') }, el('small', { text: (nm.match(/-?\d+$/) || [''])[0] })),
+            el('button.t2-step', { 'aria-label': 'Bajar medio tono la cuerda ' + (n() - i), title: 'Medio tono más grave', onclick: () => { st.offsets[i] = Math.max(-7, off - 1); done.delete(i); virtualShift = 0; saveIt(); draw(); } }, '▼'),
+            el('span.t2-off', { text: phys[i] ? (phys[i] > 0 ? '+' : '') + phys[i] : 'estándar' })));
+        }
+
+        ui.needle = el('i.t2-needle');
+        ui.cents = el('div.t2-cents', { text: 'Toca una cuerda al aire' });
+        ui.hint = el('div.t2-hint', { text: '' });
+        const meter = el('div.t2-meter', null, el('span.t2-minus', { text: '−' }), el('div.t2-scale', null,
+          ...[-40, -30, -20, -10, 10, 20, 30, 40].map((v) => el('i.t2-tick', { style: { left: (50 + v) + '%' } })), el('i.t2-center'), ui.needle),
+          el('span.t2-plus', { text: '+' }));
+
+        const capo = el('label.field.t2-capo', null, 'Cejilla',
+          el('select.sel', { onchange: (e) => { st.capo = +e.target.value; saveIt(); draw(); } },
+            ...Array.from({ length: 13 }, (_, k) => el('option', { value: k, text: k ? 'Traste ' + k : 'Sin cejilla', selected: k === st.capo }))));
+
+        // the virtual tuning
+        const vt = G.virtualTuning(st.offsets, st.bass);
+        let virtual = null;
+        if (name !== 'Estándar' || virtualShift) {
+          if (!vt || vt.shift === 0) {
+            virtual = el('div.t2-virtual', null, el('div', null, el('b', { text: 'Afinación virtual' }),
+              el('span', { text: vt && vt.shift === 0 ? ' — No hace falta: con las cuerdas agudas en estándar, solo afina a mano las que cambian.' : ' — Esta afinación cambia cuerdas distintas entre sí: hay que afinarla a mano.' })));
+          } else {
+            const dir = vt.shift < 0 ? 'más grave' : 'más aguda';
+            const st2 = Math.abs(vt.shift) === 1 ? 'medio tono' : Math.abs(vt.shift) === 2 ? 'un tono' : Math.abs(vt.shift) + ' semitonos';
+            const by = vt.byHandName === 'Estándar' ? 'Deja tu guitarra en estándar.' : 'Afina tu guitarra en ' + vt.byHandName + ' (es más fácil).';
+            virtual = el('div.t2-virtual' + (virtualShift ? '.on' : ''), null,
+              el('div', null, el('b', { text: 'Afinación virtual' }), el('span', { text: virtualShift
+                ? ` — Prendida: Galpon hace sonar tu guitarra ${st2} ${dir}. ${by} El afinador ya te muestra a qué afinarla.`
+                : ` — Para no reafinar: Galpon hace sonar tu guitarra ${st2} ${dir}. ${by} Nunca suena igual que afinar de verdad, pero sirve para probar una canción rápido.` })),
+              el('button.btn' + (virtualShift ? '' : '.primary'), { onclick: async () => {
+                const next = virtualShift ? 0 : vt.shift;
+                if (opts.onVirtual) await opts.onVirtual(next, vt);
+                else {
+                  const t = currentTrack();
+                  if (!t || t.kind !== 'audio') { G.toast('Elige la pista de audio de tu guitarra o bajo', true); return; }
+                  const r = await G.call('setRetune', { trackId: t.id, semitones: next });
+                  if (!r || !r.ok) { G.toast((r && r.error) || 'No se pudo', true); return; }
+                  A.refresh && A.refresh();
+                }
+                virtualShift = next; done.clear(); draw();
+                if (!opts.onVirtual) G.toast(next ? 'Afinación virtual prendida en la pista' : 'Afinación virtual apagada');
+              } }, virtualShift ? 'Apagar' : 'Usar afinación virtual'));
+          }
+        }
+
+        wrap.append(
+          el('div.t2-head', null,
+            el('div.t2-name', null, el('small', { text: opts.title || (st.bass ? 'Bajo' : 'Guitarra') }), el('b', { text: virtualShift && vt ? vt.byHandName + ' → ' + name : name })),
+            el('div.t2-controls', null, opts.offsets ? null : kind, presets, ref)),
+          strings,
+          meter, ui.cents, ui.hint,
+          el('div.t2-foot', null, capo, el('span.note', { text: st.capo
+            ? `Afina sin la cejilla y después ponla en el traste ${st.capo}: las notas suenan ${st.capo} semitono${st.capo > 1 ? 's' : ''} más agudas.`
+            : (opts.note || 'Usa la entrada de la pista de audio seleccionada. Toca una cuerda al aire por vez.') })),
+          virtual);
+        ui.strings = strings;
+      };
+      const saveIt = () => { if (!opts.offsets) { Object.assign(tunerState, st); saveTuner(); } };
+      draw();
+    }, { wide: true, onClose: () => { G.call('setTuner', { on: false }); A.onTuner = null; } });
+
+    if (!opts.offsets) {
+      const t = currentTrack();
+      if (!t || t.kind !== 'audio') ui.cents.textContent = 'Elige una pista de audio (la de la guitarra o el bajo) para afinar.';
+    }
     A.onTuner = (r) => {
-      if (!r.active) { big.style.color = ''; return; }
-      big.textContent = r.note + r.octave;
-      const c = Math.max(-50, Math.min(50, r.cents));
-      needle.style.left = 50 + c + '%';
-      big.style.color = Math.abs(c) < 4 ? '#4ade80' : '';
-      detail.textContent = `${r.freq.toFixed(1)} Hz · ${c > 0 ? '+' : ''}${c.toFixed(0)} cents`;
+      if (!ui.needle) return;
+      if (!r.active || !(r.freq > 20)) { inTuneSince = 0; return; }
+      // the string you're playing: the closest target, by ear (in semitones)
+      const tgs = targets();
+      let best = 0, bestD = 1e9;
+      tgs.forEach((p, i) => { const d = Math.abs(12 * Math.log2(r.freq / hz(p))); if (d < bestD) { bestD = d; best = i; } });
+      if (bestD > 3.5) {
+        // far from every string: just say what it is
+        ui.cents.textContent = `${r.note}${r.octave} · ${r.freq.toFixed(1)} Hz — no se parece a ninguna cuerda de esta afinación`;
+        ui.hint.textContent = '';
+        return;
+      }
+      if (best !== active) {
+        active = best;
+        ui.strings && [...ui.strings.children].forEach((c, i) => c.classList.toggle('on', i === active));
+      }
+      const cents = 1200 * Math.log2(r.freq / hz(tgs[best]));
+      const c = Math.max(-50, Math.min(50, cents));
+      ui.needle.style.left = 50 + c + '%';
+      const ok = Math.abs(cents) < 4;
+      ui.needle.classList.toggle('ok', ok);
+      ui.cents.textContent = `${c > 0 ? '+' : ''}${cents.toFixed(0)} cents · ${r.freq.toFixed(1)} Hz`;
+      ui.hint.textContent = ok ? '¡Afinada!' : cents < 0 ? (cents < -20 ? 'Muy grave: tensa la cuerda' : 'Un poco grave: tensa apenas') : (cents > 20 ? 'Muy aguda: afloja la cuerda' : 'Un poco aguda: afloja apenas');
+      ui.hint.className = ok ? 't2-hint ok' : 't2-hint';
+      if (ok) {
+        if (!inTuneSince) inTuneSince = performance.now();
+        else if (performance.now() - inTuneSince > 500 && !done.has(best)) {
+          done.add(best);
+          ui.strings && ui.strings.children[best] && ui.strings.children[best].classList.add('ok');
+        }
+      } else inTuneSince = 0;
     };
   };
 

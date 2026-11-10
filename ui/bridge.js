@@ -117,6 +117,51 @@
   // ---------------------------------------------------------------- misc
   G.clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   G.dbToText = (db) => (db <= -79 ? '-∞' : (db > 0 ? '+' : '') + db.toFixed(1)) + ' dB';
+  // Tunings: how far each string is from standard (semitones, from the lowest string up)
+  G.TUNINGS = [
+    ['Estándar', [0, 0, 0, 0, 0, 0]],
+    ['Drop D', [-2, 0, 0, 0, 0, 0]],
+    ['Medio tono abajo (Eb)', [-1, -1, -1, -1, -1, -1]],
+    ['Drop C#', [-3, -1, -1, -1, -1, -1]],
+    ['Un tono abajo (D)', [-2, -2, -2, -2, -2, -2]],
+    ['Drop C', [-4, -2, -2, -2, -2, -2]],
+    ['C# estándar', [-3, -3, -3, -3, -3, -3]],
+    ['C estándar', [-4, -4, -4, -4, -4, -4]],
+    ['Drop B', [-5, -3, -3, -3, -3, -3]],
+    ['B estándar', [-5, -5, -5, -5, -5, -5]],
+    ['Drop A', [-7, -5, -5, -5, -5, -5]],
+    ['Open G', [-2, -2, 0, 0, 0, -2]],
+    ['Open D', [-2, 0, 0, -1, -2, -2]],
+    ['Open E', [0, 2, 2, 1, 0, 0]],
+    ['DADGAD', [-2, 0, 0, 0, -2, -2]],
+    ['Medio tono arriba', [1, 1, 1, 1, 1, 1]],
+  ];
+  G.STANDARD = { guitar: [40, 45, 50, 55, 59, 64], bass: [28, 33, 38, 43, 47] };
+  /** The tuning's name ("Drop D") or "Personalizada" */
+  G.tuningName = (offsets, bass) => {
+    const n = bass ? 4 : 6;
+    const o = (offsets || []).slice(0, n);
+    const hit = G.TUNINGS.find(([, t]) => t.slice(0, n).every((v, i) => v === (o[i] || 0)));
+    return hit ? hit[0] : 'Personalizada';
+  };
+  /** The MIDI note of each open string */
+  G.tuningPitches = (offsets, bass, strings) => {
+    const base = bass ? G.STANDARD.bass : G.STANDARD.guitar;
+    const n = strings || (bass ? 4 : 6);
+    return base.slice(0, n).map((p, i) => p + ((offsets || [])[i] || 0));
+  };
+  /** For playing a tuning without retuning: the shift that makes standard sound like it (the upper
+      strings' offset, if they all agree), and what's left to tune by hand (e.g. Drop C = Drop D + 2 down) */
+  G.virtualTuning = (offsets, bass) => {
+    const n = bass ? 4 : 6;
+    const o = Array.from({ length: n }, (_, i) => (offsets || [])[i] || 0);
+    const upper = o.slice(1);
+    const shift = upper.every((v) => v === upper[0]) ? upper[0] : null;
+    if (shift === null) return null;
+    const byHand = o.map((v) => v - shift);
+    return { shift, byHand, byHandName: G.tuningName(byHand, bass) };
+  };
+
   // Note names: C D E… (default) or Do Re Mi…, chosen in Settings, for the studio and the game
   const NAMES_EN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const NAMES_ES = ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];

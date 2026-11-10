@@ -540,3 +540,44 @@ body.in-game #app { visibility: hidden; }
 .radio:has(input:checked) { border-color: #5a4422; background: #221d16; }
 .radio span { display: flex; flex-direction: column; gap: 2px; }
 .radio small { color: var(--muted); font-size: 11.5px; }
+
+/* ---- tuner (after Rocksmith's, without the neck) */
+.tuner2 { display: flex; flex-direction: column; gap: 14px; padding: 4px 0 2px; }
+.t2-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.t2-name { display: flex; flex-direction: column; }
+.t2-name small { color: var(--muted); text-transform: uppercase; letter-spacing: .12em; font-size: 11px; }
+.t2-name b { font-size: 30px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; line-height: 1.1; }
+.t2-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.t2-controls .sel { max-width: 230px; }
+.t2-ref { display: flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid var(--line2); border-radius: 8px; background: var(--deep); }
+.t2-ref span { color: var(--muted); font-size: 12px; }
+.t2-ref b { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
+.t2-ref .icon-btn { width: 24px; height: 24px; font-size: 15px; }
+.t2-strings { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
+.t2-string { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px 10px;
+  border-radius: 12px; background: var(--deep); border: 1px solid var(--line2); transition: transform .12s, box-shadow .12s, border-color .12s; }
+.t2-string::before { content: ''; position: absolute; left: 12px; right: 12px; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: var(--c); opacity: .8; }
+.t2-string.on { border-color: var(--c); box-shadow: 0 0 0 1px var(--c), 0 0 22px -4px var(--c); transform: translateY(-2px); }
+.t2-string.ok::after { content: '✓'; position: absolute; top: 4px; right: 7px; color: #4ade80; font-weight: 800; font-size: 13px; }
+.t2-note { font-size: 26px; font-weight: 800; color: var(--c); line-height: 1.1; }
+.t2-note small { font-size: 12px; font-weight: 600; color: var(--muted); margin-left: 1px; }
+.t2-step { width: 30px; height: 22px; border-radius: 6px; border: 1px solid var(--line2); background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
+.t2-step:hover { color: var(--text); border-color: var(--c); }
+.t2-off { font-size: 11px; color: var(--muted); min-height: 14px; }
+.t2-meter { display: flex; align-items: center; gap: 10px; }
+.t2-minus, .t2-plus { font-size: 22px; font-weight: 800; color: var(--muted); width: 18px; text-align: center; }
+.t2-scale { position: relative; flex: 1; height: 46px; border-radius: 12px; background: linear-gradient(90deg, rgba(239,68,68,.18), rgba(74,222,128,.12) 45%, rgba(74,222,128,.12) 55%, rgba(239,68,68,.18)); border: 1px solid var(--line2); overflow: hidden; }
+.t2-tick { position: absolute; top: 30%; bottom: 30%; width: 1px; background: var(--line2); }
+.t2-center { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #4ade80; }
+.t2-needle { position: absolute; left: 50%; top: 5px; bottom: 5px; width: 6px; margin-left: -3px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 12px var(--accent); transition: left .08s; }
+.t2-needle.ok { background: #4ade80; box-shadow: 0 0 14px #4ade80; }
+.t2-cents { text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); }
+.t2-hint { text-align: center; font-size: 18px; font-weight: 700; min-height: 24px; }
+.t2-hint.ok { color: #4ade80; }
+.t2-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.t2-foot .note { flex: 1; min-width: 200px; color: var(--muted); font-size: 13px; }
+.t2-capo { display: flex; align-items: center; gap: 8px; }
+.t2-virtual { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--line2); font-size: 13px; }
+.t2-virtual.on { border-style: solid; border-color: var(--accent); background: rgba(245,158,11,.08); }
+.t2-virtual span { color: var(--muted); }
+@media (max-width: 560px) { .t2-note { font-size: 20px; } .t2-strings { gap: 4px; } }

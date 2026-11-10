@@ -3,6 +3,8 @@
 (function () {
   'use strict';
   const G = window.G;
+  let tunerOn = false;
+  setInterval(() => { if (tunerOn && G.App && G.App.onTuner) { const f = 146.83 * Math.pow(2, (-9 + 6 * Math.sin(performance.now() / 900)) / 1200); G.App.onTuner({ active: true, note: 'D', octave: 3, cents: -9, freq: f }); } }, 100);
   let recStart = 0, version = 1, nextId = 1, playing = false, recording = false, beat = 0, lastT = performance.now(), selected = 0;
   const song = { limiter: true, name: 'Canción de prueba', bpm: 120, sigNum: 4, sigDen: 4, key: 'C', minor: false, cycle: false, cycleStart: 0, cycleEnd: 16, metronome: true, countIn: true, masterDb: 0 };
   const tracks = [];
@@ -26,6 +28,7 @@
       .map(([id, name, who, description, genre]) => ({ id, name, who, description, genre })),
     loops: [['drums-funk', 'Groove funky', 'Batería'], ['bass-walk', 'Bajo caminante', 'Bajo'], ['keys-pop', 'Acordes pop', 'Teclados'], ['pad-night', 'Pad nocturno', 'Teclados'], ['synth-arp', 'Arpegio brillante', 'Sintes']].map(([id, name, category]) => ({ id, name, category, length: 8, colour: '#60A5FA' })),
     plugins: [{ id: 'au1', name: 'Neural Amp Modeler', maker: 'Steven Atkinson', format: 'AudioUnit', instrument: false }, { id: 'au2', name: 'Vital', maker: 'Vital Audio', format: 'VST3', instrument: true }],
+    tonePresets: [['clean','Limpio','Limpios'],['chorus','Limpio con chorus','Limpios'],['crunch','Crunch','Crunch'],['hardrock','Hard rock','Distorsión'],['highgain','Alta ganancia','Alta ganancia'],['lead','Solo','Solos'],['bass','Bajo','Bajo']].map(([id,name,group]) => ({ id, name, group, description: '', bass: group === 'Bajo' })),
     pluginStatus: { scanning: false, progress: 1, current: '', count: 2, formats: 'AudioUnit, VST3' },
   };
   const palette = ['#60A5FA', '#4ADE80', '#F472B6', '#C084FC'];
@@ -130,6 +133,8 @@
   }
   function gameMock(cmd, a) {
     switch (cmd) {
+      case 'setTuner': tunerOn = !!a.on; return ok();
+      case 'setRetune': case 'applyTonePreset': case 'gameRetune': return ok();
       case 'gameLibrary': return ok({ songs: gameSongs, folders: ['/Users/demo/Music/Galpon/Juego'] });
       case 'gameImport': return ok({ count: 0, error: '' });
       case 'gameAddFolder': return ok();

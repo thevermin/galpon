@@ -79,6 +79,7 @@ private:
 std::unique_ptr<BuiltinProcessor> createBuiltinInstrument (const juce::String& type);
 std::unique_ptr<BuiltinProcessor> createBuiltinEffect (const juce::String& type);
 std::unique_ptr<BuiltinProcessor> createNamAmp();
+std::unique_ptr<BuiltinProcessor> createRetune();
 std::unique_ptr<BuiltinProcessor> createSampler();
 /** What an SFZ file maps (regions, key range, sample files, how many are missing). No audio is loaded. */
 juce::var describeSfz (const juce::File&);
