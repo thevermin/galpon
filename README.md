@@ -21,7 +21,7 @@ Versión actual: **0.13**.
 - **Instrumentos propios**: piano, piano eléctrico, órgano, sintetizador y batería. Hay un **sampler** SFZ con instrumentos grabados que se descargan con un clic: piano de cola, batería acústica, bajo y guitarra acústica.
 - **Efectos propios**: ecualizador, compresor, puerta de ruido, distorsión, amplificador, **Amp NAM** (capturas `.nam`), gabinete IR, chorus, delay, reverb y **afinación virtual**.
 - **20 sonidos listos de guitarra y bajo** (limpios, crunch, distorsión, alta ganancia, solos y bajo), los mismos que usa el modo Juego.
-- **Afinador** al estilo de Rocksmith: el nombre de la afinación, la nota de cada cuerda con su color (la que tocas se ilumina), un medidor de − a +, referencia A ajustable, 16 afinaciones conocidas (Drop D, Eb, Drop C, Open G, DADGAD…) o cuerda por cuerda, y cejilla.
+- **Afinador** al estilo de Rocksmith: el nombre de la afinación, la nota de cada cuerda con su color (la que tocas se ilumina), un medidor de − a +, referencia A ajustable, nivel de entrada (para saber si le llega sonido), 16 afinaciones conocidas (Drop D, Eb, Drop C, Open G, DADGAD…) o cuerda por cuerda, y cejilla.
 - **Afinación virtual**: con la guitarra en estándar suena, por ejemplo, un tono más grave. Para Drop C alcanza con bajar la sexta a Re. Agrega unos 25 ms de demora y nunca suena igual que afinar de verdad, pero sirve para probar una canción rápido.
 - **Plugins AU y VST3**, con su propia ventana y compensación de demora.
 - **Baterista automático** con más de 35 estilos en 8 géneros (rock, metal, pop, funk y soul, hip hop y electrónica, latino, jazz y blues, country y folk): punk, thrash con doble bombo, death metal con blast beat, trap, cumbia, cuarteto, bossa, reggae y más. Sencillo/complejo, suave/fuerte, redobles y swing. Toca como una persona: mantiene un groove, lo varía al final de cada frase y hace redobles distintos. Escucha la guitarra o el bajo que grabaste: marca sus golpes con el bombo y toca más fuerte o más suave según cómo toques.
@@ -56,6 +56,7 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 - **Notas en inglés (C D E) o en español (Do Re Mi)**, a elección, en el estudio y en el juego.
 - El orden de las cuerdas se puede poner como tablatura o con la grave arriba. El tamaño se ajusta con − y +.
 - Muestra acordes, notas largas, bends, slides, ligados, palm mute, armónicos, vibrato, partes de la canción, letra y un diapasón con la posición de la mano.
+- **Ves lo que tocaste, como en Rocksmith**: cada nota que aciertas explota en el color de su cuerda y la cuerda se ilumina; las notas largas que mantienes bien echan chispas; las que erras se apagan y marcan una ✕. Las rachas aparecen en grande («¡25 seguidas!», «x2») y también cuando se corta una.
 - **Te escucha y te da puntos**: reconoce las notas y acordes que tocas, si llegaste a tiempo y si mantuviste las notas largas. Lleva racha, multiplicador y precisión. Al final ves un resumen por parte y puedes practicar la parte que más te costó.
 - **Práctica**: más despacio sin cambiar el tono (30–100 %), repetir A–B o una parte entera.
 - **Volumen** del Master, de cada instrumento de la canción y de tu guitarra. Hay un atajo para bajar o quitar la guitarra (o el bajo) de la grabación y escucharte mejor, y puedes elegir cuánto baja la canción cuando tocas fuerte.

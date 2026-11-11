@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "PitchDetect.h"
 #include "Analysis.h"
 #include "Flex.h"
 #include "Drummer.h"
@@ -917,7 +918,7 @@ void Engine::renderSegment (int offset, int len, const float* const* in, int num
                 view.addFrom (0, 0, in[chL] + offset, len, g);
                 if (in[chR] != nullptr) view.addFrom (1, 0, in[chR] + offset, len, g);
             }
-            if (tunerEnabled && t.id == selected && in[chL] != nullptr)
+            if (tunerEnabled && tunerChannel.load() < 0 && t.id == selected && in[chL] != nullptr)
             {
                 int w = tunerWrite.load();
                 for (int i = 0; i < len; ++i)
@@ -1029,6 +1030,20 @@ void Engine::renderSegment (int offset, int len, const float* const* in, int num
             target.addFrom (1, 0, view, 1, 0, len);
         }
     }
+
+    // The tuner, straight from an input of the interface (whatever track is selected)
+    if (tunerEnabled && ! offline)
+        if (const int ch = tunerChannel.load(); ch >= 0 && ch < numIn && in != nullptr && in[ch] != nullptr)
+        {
+            const float g = tunerGain.load();
+            int w = tunerWrite.load();
+            for (int i = 0; i < len; ++i)
+            {
+                tunerRing[(size_t) w] = in[ch][offset + i] * g;
+                w = (w + 1) % (int) tunerRing.size();
+            }
+            tunerWrite = w;
+        }
 
     juce::AudioBuffer<float> masterView (master.getArrayOfWritePointers(), 2, len);
     if (! offline && game.isLoaded())
@@ -2846,52 +2861,11 @@ juce::var Engine::getTunerReading()
         buf[(size_t) i] = tunerRing[(size_t) ((w + i) % N)];
 
     auto* o = new juce::DynamicObject();
-    float rms = 0;
-    for (auto s : buf) rms += s * s;
-    rms = std::sqrt (rms / N);
-    o->setProperty ("level", rms);
-    if (rms < 0.004f) { o->setProperty ("active", false); return juce::var (o); }
-
-    // YIN-style difference function
-    const int maxLag = juce::jmin (N / 2, (int) (sampleRate / 30.0));
-    const int minLag = juce::jmax (2, (int) (sampleRate / 1500.0));
-    std::vector<float> d ((size_t) maxLag + 1, 0.0f);
-    for (int lag = 1; lag <= maxLag; ++lag)
-    {
-        float sum = 0;
-        for (int i = 0; i < N - maxLag; ++i)
-        {
-            const float diff = buf[(size_t) i] - buf[(size_t) (i + lag)];
-            sum += diff * diff;
-        }
-        d[(size_t) lag] = sum;
-    }
-    float running = 0;
-    int best = -1;
-    for (int lag = 1; lag <= maxLag; ++lag)
-    {
-        running += d[(size_t) lag];
-        const float cmnd = running > 0 ? d[(size_t) lag] * lag / running : 1.0f;
-        d[(size_t) lag] = cmnd;
-    }
-    for (int lag = minLag; lag < maxLag; ++lag)
-        if (d[(size_t) lag] < 0.15f)
-        {
-            while (lag + 1 < maxLag && d[(size_t) lag + 1] < d[(size_t) lag]) ++lag;
-            best = lag;
-            break;
-        }
-    if (best < 0) { o->setProperty ("active", false); return juce::var (o); }
-
-    // parabolic interpolation
-    double lag = best;
-    if (best > 1 && best < maxLag - 1)
-    {
-        const double a = d[(size_t) best - 1], b = d[(size_t) best], c = d[(size_t) best + 1];
-        const double den = a - 2 * b + c;
-        if (std::abs (den) > 1.0e-9) lag = best + 0.5 * (a - c) / den;
-    }
-    const double freq = sampleRate / lag;
+    float level = 0.0f;
+    const double freq = detectPitch (buf.data(), N, sampleRate, level);
+    o->setProperty ("level", level);
+    o->setProperty ("channel", tunerChannel.load());
+    if (freq <= 0.0) { o->setProperty ("active", false); return juce::var (o); }
     const double midi = 69.0 + 12.0 * std::log2 (freq / 440.0);
     const int nearest = juce::roundToInt (midi);
     static const char* names[] = { "Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si" };

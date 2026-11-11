@@ -1381,7 +1381,28 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
         engine.deviceManager.setMidiInputDeviceEnabled (arg (args, "id").toString(), (bool) arg (args, "enabled", true));
         return ok();
     }
-    if (cmd == "setTuner")   { engine.tunerEnabled = (bool) arg (args, "on", false); return ok(); }
+    if (cmd == "setTuner")
+    {
+        // { on, trackId? }: listens to that audio track's input; without one, the selected audio
+        // track, or the first audio track there is (so it hears something whatever is selected)
+        const bool on = (bool) arg (args, "on", false);
+        if (on)
+        {
+            Track* src = engine.song.findTrack ((int) arg (args, "trackId", 0));
+            if (src == nullptr || src->kind != TrackKind::Audio) src = engine.song.findTrack (engine.selectedTrackId.load());
+            if (src == nullptr || src->kind != TrackKind::Audio)
+                for (auto& t : engine.song.tracks) if (t->kind == TrackKind::Audio) { src = t.get(); break; }
+            engine.tunerChannel = src != nullptr ? src->inputChannel : 0;
+            engine.tunerGain = src != nullptr ? juce::Decibels::decibelsToGain (src->inputGainDb) : 1.0f;
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("channel", engine.tunerChannel.load());
+            o->setProperty ("track", src != nullptr ? src->name : juce::String());
+            engine.tunerEnabled = true;
+            return ok (juce::var (o));
+        }
+        engine.tunerEnabled = false;
+        return ok();
+    }
 
     //---------------------------------------------------------------- plugins
     if (cmd == "scanPlugins") { engine.plugins.startScan ((bool) arg (args, "full", false)); return ok(); }

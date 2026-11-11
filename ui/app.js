@@ -707,7 +707,14 @@
     const done = new Set();
     let ui = {};
 
-    G.call('setTuner', { on: true });
+    // listen to the guitar's track (the game says which one), or the selected audio track
+    let srcText = 'Escuchando…';
+    const listenTo = opts.trackId || ((currentTrack() || {}).kind === 'audio' ? currentTrack().id : 0);
+    G.call('setTuner', { on: true, trackId: listenTo }).then((r) => {
+      const d = (r && r.data) || {};
+      srcText = d.track ? `Escuchando «${d.track}» · entrada ${d.channel + 1}` : `Escuchando la entrada ${(d.channel || 0) + 1}`;
+      if (ui.src) ui.src.textContent = srcText;
+    });
     G.modal('Afinador', (body) => {
       const wrap = el('div.tuner2');
       body.append(wrap);
@@ -746,6 +753,9 @@
 
         ui.needle = el('i.t2-needle');
         ui.cents = el('div.t2-cents', { text: 'Toca una cuerda al aire' });
+        ui.level = el('i');
+        ui.src = el('span', { text: srcText });
+        const listen = el('div.t2-listen', null, el('div.t2-level', null, ui.level), ui.src);
         ui.hint = el('div.t2-hint', { text: '' });
         const meter = el('div.t2-meter', null, el('span.t2-minus', { text: '−' }), el('div.t2-scale', null,
           ...[-40, -30, -20, -10, 10, 20, 30, 40].map((v) => el('i.t2-tick', { style: { left: (50 + v) + '%' } })), el('i.t2-center'), ui.needle),
@@ -791,7 +801,7 @@
             el('div.t2-name', null, el('small', { text: opts.title || (st.bass ? 'Bajo' : 'Guitarra') }), el('b', { text: virtualShift && vt ? vt.byHandName + ' → ' + name : name })),
             el('div.t2-controls', null, opts.offsets ? null : kind, presets, ref)),
           strings,
-          meter, ui.cents, ui.hint,
+          meter, ui.cents, ui.hint, listen,
           el('div.t2-foot', null, capo, el('span.note', { text: st.capo
             ? `Afina sin la cejilla y después ponla en el traste ${st.capo}: las notas suenan ${st.capo} semitono${st.capo > 1 ? 's' : ''} más agudas.`
             : (opts.note || 'Usa la entrada de la pista de audio seleccionada. Toca una cuerda al aire por vez.') })),
@@ -802,12 +812,17 @@
       draw();
     }, { wide: true, onClose: () => { G.call('setTuner', { on: false }); A.onTuner = null; } });
 
-    if (!opts.offsets) {
-      const t = currentTrack();
-      if (!t || t.kind !== 'audio') ui.cents.textContent = 'Elige una pista de audio (la de la guitarra o el bajo) para afinar.';
-    }
+    let quietSince = performance.now();
     A.onTuner = (r) => {
       if (!ui.needle) return;
+      // how much sound arrives: so it's obvious when the tuner hears nothing (wrong input, volume at zero)
+      const db = r.level > 0 ? 20 * Math.log10(r.level) : -100;
+      ui.level.style.width = Math.max(0, Math.min(100, (db + 60) * 100 / 54)) + '%';
+      if (r.level > 0.0012) quietSince = performance.now();
+      else if (performance.now() - quietSince > 4000) {
+        ui.cents.textContent = 'No llega sonido. Revisa que la guitarra esté conectada a esa entrada y la perilla de ganancia de la interfaz.';
+        ui.hint.textContent = '';
+      }
       if (!r.active || !(r.freq > 20)) { inTuneSince = 0; return; }
       // the string you're playing: the closest target, by ear (in semitones)
       const tgs = targets();

@@ -17,6 +17,7 @@
 #include "engine/GamePlayer.h"
 #include "engine/NoteScorer.h"
 #include "engine/ToneLibrary.h"
+#include "engine/PitchDetect.h"
 
 using namespace galpon;
 
@@ -587,6 +588,44 @@ static void testGuitarTone()
         cab->processBlock (blk, midi);
     }
     CHECK (fizz (noise) < before * 0.15, "el gabinete sin archivo IR igual corta los agudos como un parlante");
+}
+
+static void testTunerPitch()
+{
+    std::cout << "Afinador: detecta cada cuerda\n";
+    const double sr = 48000;
+    juce::Random rnd (7);
+    // a plucked string: strong harmonics (the 2nd often louder than the fundamental), decaying, a bit of noise and hum
+    auto pluck = [&] (double f, float amp, double ageSec)
+    {
+        std::vector<float> v (4096);
+        for (int i = 0; i < (int) v.size(); ++i)
+        {
+            const double t = ageSec + i / sr;
+            double y = 0;
+            const double hs[] = { 0.6, 1.0, 0.7, 0.45, 0.3, 0.2, 0.12, 0.08 };
+            for (int k = 0; k < 8; ++k) y += hs[k] * std::exp (-t * (0.6 + k * 0.4)) * std::sin (juce::MathConstants<double>::twoPi * f * (k + 1) * t * (1.0 + 0.0001 * k * k) + k);   // real strings: a little inharmonic
+            y += 0.02 * std::sin (juce::MathConstants<double>::twoPi * 50.0 * t) + 0.01 * (rnd.nextFloat() * 2 - 1);
+            v[(size_t) i] = (float) (amp * y / 3.0);
+        }
+        return v;
+    };
+    const int strings[] = { 40, 45, 50, 55, 59, 64, 38, 36, 28, 33 };   // a guitar, Drop D / Drop C low strings, a bass
+    for (int m : strings)
+        for (float amp : { 0.5f, 0.02f })   // loud, and a quiet guitar straight into the interface
+            for (double age : { 0.05, 1.2 })
+            {
+                if (amp < 0.1f && age > 1.0) continue;   // a quiet note a second later is under the noise of any interface
+                const double f = 440.0 * std::pow (2.0, (m - 69) / 12.0);
+                float level = 0;
+                auto v = pluck (f, amp, age);
+                const double got = detectPitch (v.data(), (int) v.size(), sr, level);
+                const double cents = got > 0 ? 1200.0 * std::log2 (got / f) : 9999.0;
+                CHECK (std::abs (cents) < 5.0, "cuerda " << m << " (" << juce::String (f, 1) << " Hz, volumen " << amp << ", " << age << " s después): " << juce::String (got, 2) << " Hz, " << juce::String (cents, 1) << " cents");
+            }
+    std::vector<float> silence (4096, 0.0f);
+    float lv = 0;
+    CHECK (detectPitch (silence.data(), 4096, sr, lv) == 0.0, "en silencio no inventa notas");
 }
 
 static void testRetuneAndPresets()
@@ -2575,6 +2614,7 @@ int main()
     testRealDrums();
     testGuitarTone();
     testRetuneAndPresets();
+    testTunerPitch();
     testRecording();
     testRecordingSafety();
     testSaveLoadUndoExport();

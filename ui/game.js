@@ -307,10 +307,124 @@
   // ------------------------------------------------------------------ score
   function resetScore() {
     play.score = { points: 0, streak: 0, best: 0, hits: 0, judged: 0, timings: [], sections: {}, pass: -1 };
+    play.fx = []; play.banner = null;
     play.marks = new Map();       // item index → {hit, at}
     play.feedback = null;
   }
   const mult = () => Math.min(4, 1 + Math.floor(play.score.streak / 8));
+  // ---- what you played, on screen (like Rocksmith): a burst where each note you hit lands, sparks
+  // while you hold a long note well, the note going grey when you miss it, and a banner for streaks
+  const STREAKS = [10, 25, 50, 75, 100, 150, 200];
+  function spawnFx(ev, hit) {
+    const p = play, at = performance.now();
+    p.fx = (p.fx || []).filter((f) => at - f.at < 1500);
+    for (const i of ev.items) p.fx.push({ i, hit, at, chord: ev.items.length > 1 });
+  }
+  function banner(text, streak, small) {
+    play.banner = { text, streak, small: !!small, at: performance.now() };
+  }
+  /** Draws the bursts. pos(item) gives [x, y, size] where that note lands on screen. */
+  function drawFx(ctx, pos, nowSong) {
+    const p = play;
+    if (!p.fx || !p.fx.length) return;
+    const t = performance.now();
+    ctx.save();
+    for (const f of p.fx) {
+      const age = (t - f.at) / 1000;
+      const nt = p.items[f.i];
+      if (!nt || age > 0.9) continue;
+      const q = pos(nt);
+      if (!q) continue;
+      const [x, y, g] = q;
+      const c = colour(nt.s | 0);
+      if (f.hit) {
+        const life = Math.min(1, age / 0.7);
+        if (life >= 1) continue;
+        const a = 1 - life * life;
+        // white flash, then a ring in the string's colour
+        if (age < 0.18) {
+          ctx.globalAlpha = 1 - age / 0.18;
+          const fl = ctx.createRadialGradient(x, y, 0, x, y, g * 0.9);
+          fl.addColorStop(0, 'rgba(255,255,255,0.95)'); fl.addColorStop(0.4, c); fl.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = fl; ctx.beginPath(); ctx.arc(x, y, g * 0.9, 0, 7); ctx.fill();
+        }
+        ctx.globalAlpha = a;
+        ctx.strokeStyle = c; ctx.lineWidth = Math.max(1.5, g * 0.08 * a);
+        ctx.shadowColor = c; ctx.shadowBlur = 16;
+        ctx.beginPath(); ctx.arc(x, y, g * (0.35 + life * (f.chord ? 1.1 : 0.9)), 0, 7); ctx.stroke();
+        // sparks flying out (always the same pattern for a note, so it doesn't flicker)
+        ctx.fillStyle = c;
+        const nSp = f.chord ? 8 : 12;
+        for (let k = 0; k < nSp; k++) {
+          const ang = (k / nSp) * Math.PI * 2 + (f.i % 7) * 0.4;
+          const sp = g * (0.5 + ((k * 37 + f.i * 11) % 10) / 14);
+          const d = sp * life * 1.6;
+          const sx = x + Math.cos(ang) * d, sy = y + Math.sin(ang) * d * 0.7 + life * life * g * 0.6;
+          const r = Math.max(1, g * 0.07 * a);
+          ctx.beginPath(); ctx.arc(sx, sy, r, 0, 7); ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+      } else {
+        // a miss: a dull grey puff and a small ✕
+        const life = Math.min(1, age / 0.5);
+        if (life >= 1) continue;
+        ctx.globalAlpha = (1 - life) * 0.8;
+        ctx.strokeStyle = '#f87171'; ctx.lineWidth = Math.max(1.5, g * 0.07);
+        const r = g * 0.22;
+        ctx.beginPath(); ctx.moveTo(x - r, y - r - life * g * 0.3); ctx.lineTo(x + r, y + r - life * g * 0.3);
+        ctx.moveTo(x + r, y - r - life * g * 0.3); ctx.lineTo(x - r, y + r - life * g * 0.3); ctx.stroke();
+      }
+    }
+    // sparks while you hold a long note you hit
+    for (const [i, mk] of p.marks) {
+      if (!mk.hit) continue;
+      const nt = p.items[i];
+      if (!nt || !(nt.sus >= 0.08) || nowSong < nt.t || nowSong > nt.t + nt.sus) continue;
+      if (mk.held !== undefined && mk.held < 0.5) continue;
+      const q = pos(nt);
+      if (!q) continue;
+      const [x, y, g] = q, c = colour(nt.s | 0);
+      ctx.fillStyle = c; ctx.shadowColor = c; ctx.shadowBlur = 10;
+      for (let k = 0; k < 5; k++) {
+        const ph = ((t / 380) + k / 5 + i * 0.13) % 1;
+        const ang = -Math.PI / 2 + Math.sin(k * 2.3 + i) * 1.1;
+        ctx.globalAlpha = (1 - ph) * 0.9;
+        ctx.beginPath(); ctx.arc(x + Math.cos(ang) * ph * g * 0.9, y + Math.sin(ang) * ph * g * 0.9, Math.max(1, g * 0.06 * (1 - ph)), 0, 7); ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(t / 60);
+      ctx.strokeStyle = c; ctx.lineWidth = Math.max(1.5, g * 0.05);
+      ctx.beginPath(); ctx.arc(x, y, g * 0.45, 0, 7); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  /** The banner in the middle: "¡25 seguidas!", "x3", or the streak you lost */
+  function drawBanner(ctx, w, h, flat) {
+    const b = play.banner;
+    if (!b) return;
+    const age = (performance.now() - b.at) / 1000;
+    const dur = b.small ? 0.9 : 1.6;
+    if (age > dur) { play.banner = null; return; }
+    const pop = age < 0.15 ? 0.6 + 0.4 * (age / 0.15) * 1.15 : age < 0.25 ? 1.1 - 0.1 * ((age - 0.15) / 0.1) : 1;
+    const a = age > dur - 0.4 ? (dur - age) / 0.4 : 1;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const size = Math.round((b.small ? 34 : b.streak < 0 ? 22 : 44) * pop * (flat ? 0.6 : 1));
+    ctx.font = '800 ' + size + 'px "Space Grotesk", Inter, sans-serif';
+    const y = flat ? size * 0.9 : h * 0.3 - age * 14;
+    if (b.streak < 0) ctx.fillStyle = '#fca5a5';
+    else {
+      const gr = ctx.createLinearGradient(0, y - size / 2, 0, y + size / 2);
+      gr.addColorStop(0, '#fff3c4'); gr.addColorStop(1, b.small ? '#7dd3fc' : '#f5a524');
+      ctx.fillStyle = gr;
+      ctx.shadowColor = b.small ? '#38bdf8' : '#f59e0b'; ctx.shadowBlur = 24;
+    }
+    ctx.textAlign = 'right';
+    ctx.fillText(b.text.toUpperCase(), w - 28, y);
+    ctx.restore();
+  }
+
   function onJudgments(list) {
     const p = play, sc = p.score;
     for (const [index, pass, kind, hit, ms, value] of list) {
@@ -329,17 +443,22 @@
         continue;
       }
       sc.judged++;
+      spawnFx(ev, hit);
       const si = sectionAt(ev.t);
       const sec = sc.sections[si] || (sc.sections[si] = { hits: 0, total: 0 });
       sec.total++;
       if (hit) {
         sc.hits++; sec.hits++; sc.streak++; sc.best = Math.max(sc.best, sc.streak);
+        const up = [10, 20, 30].includes(sc.streak) ? ' · x' + mult() : '';
+        if (STREAKS.includes(sc.streak) || (sc.streak > 200 && sc.streak % 100 === 0)) banner('¡' + sc.streak + ' seguidas!' + up, sc.streak);
+        else if (up) banner('x' + mult(), 0, true);
         sc.points += 100 * mult();
         if (!ev.l && !ev.m) sc.timings.push(ms);
         const abs = Math.abs(ms);
         p.feedback = ev.l || ev.m || abs <= 35 ? { text: '¡Justo!', tone: 'good', at: performance.now() }
           : { text: (ms < 0 ? 'Temprano' : 'Tarde') + ' · ' + Math.round(abs) + ' ms', tone: 'ok', at: performance.now() };
       } else {
+        if (sc.streak >= 10) banner('Racha cortada: ' + sc.streak, -1);
         sc.streak = 0;
         p.feedback = { text: ev.p.length > 1 ? 'Acorde: sonaron ' + Math.round(value * ev.p.length) + ' de ' + ev.p.length : 'Errada', tone: 'bad', at: performance.now() };
       }
@@ -808,7 +927,7 @@
     const bass = isBass(a);
     const offsets = ((a.tuning && a.tuning.length) ? a.tuning : [0, 0, 0, 0, 0, 0]).slice(0, bass ? 4 : 6);
     G.App.showTuner({
-      offsets, bass, capo: a.capo || 0,
+      offsets, bass, capo: a.capo || 0, trackId: g.trackId,
       title: play.song.title + ' · ' + kindName(a),
       virtualShift: play.virtualShift || 0,
       note: 'La afinación de esta canción. Toca una cuerda al aire por vez.',
@@ -1216,6 +1335,11 @@
 
     // the line
     ctx.fillStyle = '#f3f3f5'; roundRect(ctx, hitX - 2, top - 8, 4, n * laneH + 16, 2); ctx.fill();
+    drawFx(ctx, (nt) => {
+      const s2 = nt.s | 0;
+      return s2 < 0 || s2 >= n ? null : [hitX, rowY(s2), box];
+    }, now);
+    if (opts.view === '2d') drawBanner(ctx, w, h, true);
 
     // count-in before the first note
     if (p.items.length && now < p.items[0].t && p.items[0].t - now < 4 && p.playing) {
@@ -1254,6 +1378,19 @@
     if (!nt.bn) return 0;
     const len = Math.max(0.2, nt.sus || 0.35);
     return nt.bn * Math.min(1, dt / (len * 0.35));
+  }
+  /** 0..1: how much a string still rings from a note you just hit (it glows) */
+  function stringGlow(str) {
+    if (!play.fx) return 0;
+    const t = performance.now();
+    let g = 0;
+    for (const f of play.fx) {
+      if (!f.hit) continue;
+      const nt = play.items[f.i];
+      if (!nt || (nt.s | 0) !== str) continue;
+      g = Math.max(g, 1 - (t - f.at) / 350);
+    }
+    return Math.max(0, g);
   }
   function drawHighway3D(now) {
     const { ctx, w, h } = fit(hw3);
@@ -1615,8 +1752,11 @@
     for (let str = 0; str < n; str++) {
       const a = P(fMin - 0.3, hOf(str), 0), b = P(fMax + 0.3, hOf(str), 0);
       ctx.strokeStyle = colour(str); ctx.globalAlpha = 0.95;
-      ctx.lineWidth = Math.max(1.4, (1.2 + (n - 1 - str) * 0.3) * Math.min(1.6, a[2] * 0.012));
+      const ring = stringGlow(str);
+      ctx.lineWidth = Math.max(1.4, (1.2 + (n - 1 - str) * 0.3) * Math.min(1.6, a[2] * 0.012)) * (1 + ring);
+      if (ring > 0) { ctx.shadowColor = colour(str); ctx.shadowBlur = 20 * ring; }
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
     }
     ctx.textAlign = 'center';
@@ -1635,6 +1775,14 @@
     ctx.textAlign = 'center';
 
     for (const i of list) if (arriving(i)) drawNote(i);
+    drawFx(ctx, (nt) => {
+      const str = nt.s | 0;
+      if (str < 0 || str >= n) return null;
+      const X = (nt.f | 0) === 0 ? aFret - 1 + aWidth / 2 : (nt.f | 0) - 0.5;
+      const q = P(X, hOf(str), 0);
+      return [q[0], q[1], Math.max(20, q[2] * 0.62)];
+    }, now);
+    drawBanner(ctx, w, h);
 
     // ---- what comes next, top left
     let nextChord = null;

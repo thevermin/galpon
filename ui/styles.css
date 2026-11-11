@@ -581,3 +581,6 @@ body.in-game #app { visibility: hidden; }
 .t2-virtual.on { border-style: solid; border-color: var(--accent); background: rgba(245,158,11,.08); }
 .t2-virtual span { color: var(--muted); }
 @media (max-width: 560px) { .t2-note { font-size: 20px; } .t2-strings { gap: 4px; } }
+.t2-listen { display: flex; align-items: center; gap: 10px; justify-content: center; color: var(--muted); font-size: 12px; }
+.t2-level { width: 120px; height: 6px; border-radius: 3px; background: var(--deep); border: 1px solid var(--line2); overflow: hidden; }
+.t2-level i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #22c55e, #facc15 80%, #ef4444); transition: width .1s; }

@@ -180,6 +180,8 @@ public:
     void  resetMasterMeter() noexcept      { masterPeakL = 0.0f; masterPeakR = 0.0f; }
     juce::var getTunerReading();
     std::atomic<bool> tunerEnabled { false };
+    std::atomic<int> tunerChannel { -1 };       // the interface input the tuner listens to (-1: the selected track's)
+    std::atomic<float> tunerGain { 1.0f };
     juce::String lastError;
     double getCpu() { return deviceManager.getCpuUsage(); }
 

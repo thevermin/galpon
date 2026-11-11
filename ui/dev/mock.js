@@ -277,7 +277,7 @@
       // pretend to listen: most notes hit, some early/late, a few missed
       if (gm.guitar && gm.events && gm.playing) {
         const js = [];
-        while (gm.next < gm.events.length && gm.events[gm.next].t + 0.3 < gm.pos) {
+        while (gm.next < gm.events.length && gm.events[gm.next].t + 0.06 < gm.pos) {
           const e = gm.events[gm.next], r = Math.random();
           js.push([gm.next, 0, 0, r > 0.15, (Math.random() - 0.4) * 90, r > 0.15 ? 1 : 0.3]);
           if (e.sus > 0.4 && r > 0.15) js.push([gm.next, 0, 1, Math.random() > 0.3, 0, 0.8]);
