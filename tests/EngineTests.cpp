@@ -667,6 +667,82 @@ static void testGuitarGate()
     CHECK (flips <= 1, "al apagarse la nota se cierra una sola vez, sin titilar (" << flips << " cambios)");
 }
 
+static void testStringRetune()
+{
+    std::cout << "Afinación virtual por cuerda (Drop D sin tocar la guitarra)\n";
+    const double sr = 48000;
+    // steady strings with harmonics, like a guitar note a moment after the pick
+    auto play = [&] (std::vector<double> hz)
+    {
+        juce::AudioBuffer<float> b (2, (int) (sr * 1.5));
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const double t = i / sr;
+            double y = 0;
+            for (auto f : hz) for (int k = 1; k <= 8; ++k) y += 0.12 / k * std::sin (juce::MathConstants<double>::twoPi * f * k * t + k);
+            b.setSample (0, i, (float) y); b.setSample (1, i, (float) y);
+        }
+        return b;
+    };
+    auto run = [&] (juce::AudioBuffer<float> b)
+    {
+        auto fx = createBuiltin ("retune");   // default: Drop D
+        fx->prepareToPlay (sr, 256);
+        juce::MidiBuffer midi;
+        for (int i = 0; i < b.getNumSamples(); i += 256) { juce::AudioBuffer<float> blk (b.getArrayOfWritePointers(), 2, i, juce::jmin (256, b.getNumSamples() - i)); fx->processBlock (blk, midi); }
+        return b;
+    };
+    // energy around a frequency, in the second half
+    auto level = [&] (const juce::AudioBuffer<float>& b, double hz)
+    {
+        const int from = b.getNumSamples() / 2, len = b.getNumSamples() - from;
+        double best = 0;
+        for (double f = hz * 0.985; f <= hz * 1.015; f += 0.25)
+        {
+            double re = 0, im = 0;
+            for (int i = 0; i < len; i += 2)
+            {
+                const double w = 0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * i / len), p = juce::MathConstants<double>::twoPi * f * (from + i) / sr;
+                re += w * b.getSample (0, from + i) * std::cos (p); im += w * b.getSample (0, from + i) * std::sin (p);
+            }
+            best = std::max (best, std::sqrt (re * re + im * im));
+        }
+        return best;
+    };
+    const double E2 = 82.41, D2 = 73.42, A2 = 110.0, D3 = 146.83;
+    auto e = run (play ({ E2 }));
+    CHECK (level (e, D2) > 4 * level (e, E2), "la 6ª al aire (Mi) suena como Re (" << level (e, D2) << " vs " << level (e, E2) << ")");
+    auto d = run (play ({ D3 }));
+    auto d0 = play ({ D3 });
+    CHECK (level (d, D3) > 0.6 * level (d0, D3), "una nota de la 4ª cuerda queda igual");
+    auto two = run (play ({ E2, A2 }));
+    CHECK (level (two, D2) > 3 * level (two, E2) && level (two, A2) > 0.5 * level (play ({ E2, A2 }), A2),
+           "Mi en la 6ª y La en la 5ª a la vez: solo baja el Mi (" << level (two, D2) << ", " << level (two, E2) << ", " << level (two, A2) << ")");
+    // the open Drop D power chord, played on a standard guitar: E2 A2 D3 -> D2 A2 D3
+    auto chord = run (play ({ E2, A2, D3 }));
+    CHECK (level (chord, D2) > 2 * level (chord, E2) && level (chord, A2) > 0.5 * level (play ({ E2, A2, D3 }), A2),
+           "el power chord al aire suena en Drop D (" << level (chord, D2) << " vs " << level (chord, E2) << ")");
+    // Drop C: everything a tone down, the 6th string two tones
+    {
+        auto b = play ({ E2, A2 });
+        auto fxc = createBuiltin ("retune");
+        auto* bp = dynamic_cast<BuiltinProcessor*> (fxc.get());
+        bp->setReal ("semitones", -2.0f); bp->setReal ("s6", -2.0f);
+        fxc->prepareToPlay (sr, 256);
+        juce::MidiBuffer midi;
+        for (int i = 0; i < b.getNumSamples(); i += 256) { juce::AudioBuffer<float> blk (b.getArrayOfWritePointers(), 2, i, juce::jmin (256, b.getNumSamples() - i)); fxc->processBlock (blk, midi); }
+        const double C2 = 65.41, G2 = 98.0;
+        CHECK (level (b, C2) > 2 * level (b, E2) && level (b, G2) > 2 * level (b, A2), "Drop C: Mi->Do y La->Sol (" << level (b, C2) << ", " << level (b, G2) << ")");
+    }
+    auto fx = createBuiltin ("retune");
+    fx->prepareToPlay (sr, 256);
+    { juce::AudioBuffer<float> b (2, 256); b.clear(); juce::MidiBuffer m; fx->processBlock (b, m); }
+    CHECK (fx->getLatencySamples() <= (int) (sr * 0.09), "por cuerda agrega menos de 90 ms (" << fx->getLatencySamples() * 1000 / sr << " ms)");
+    dynamic_cast<BuiltinProcessor*> (fx.get())->setReal ("fast", 1.0f);
+    { juce::AudioBuffer<float> b (2, 256); b.clear(); juce::MidiBuffer m; fx->processBlock (b, m); }
+    CHECK (fx->getLatencySamples() <= (int) (sr * 0.045), "en «menos demora», unos 43 ms");
+}
+
 static void testTunerPitch()
 {
     std::cout << "Afinador: detecta cada cuerda\n";
@@ -714,6 +790,7 @@ static void testRetuneAndPresets()
         auto fx = createBuiltin ("retune");
         auto* b = dynamic_cast<BuiltinProcessor*> (fx.get());
         b->setReal ("semitones", semis);
+        b->setReal ("s6", 0.0f);                 // the whole guitar, not Drop D
         fx->prepareToPlay (sr, 256);
         juce::AudioBuffer<float> buf (2, (int) sr);
         for (int i = 0; i < buf.getNumSamples(); ++i)
@@ -2734,6 +2811,7 @@ int main()
     testGuitarTone();
     testRetuneAndPresets();
     testTunerPitch();
+    testStringRetune();
     testGuitarGate();
     renderChainForAnalysis();
     testRecording();

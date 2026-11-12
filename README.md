@@ -7,7 +7,7 @@
 - **Windows**: baja el instalador desde [Releases](../../releases), o el último build desde [Actions](../../actions).
 - **Mac**: se compila en un par de comandos (ver [Compilar](#compilar)).
 
-Versión actual: **0.13**.
+Versión actual: **0.14**.
 
 ---
 
@@ -22,7 +22,7 @@ Versión actual: **0.13**.
 - **Efectos propios**: ecualizador, compresor, puerta de ruido (aprende sola el ruido de tu entrada), distorsión, amplificador, **Amp NAM** (capturas `.nam`), gabinete IR, chorus, delay, reverb y **afinación virtual**.
 - **20 sonidos listos de guitarra y bajo** (limpios, crunch, distorsión, alta ganancia, solos y bajo), los mismos que usa el modo Juego.
 - **Afinador** al estilo de Rocksmith: el nombre de la afinación, la nota de cada cuerda con su color (la que tocas se ilumina), un medidor de − a +, referencia A ajustable, nivel de entrada (para saber si le llega sonido), 16 afinaciones conocidas (Drop D, Eb, Drop C, Open G, DADGAD…) o cuerda por cuerda, y cejilla.
-- **Afinación virtual**: con la guitarra en estándar suena, por ejemplo, un tono más grave. Para Drop C alcanza con bajar la sexta a Re. Agrega unos 25 ms de demora y nunca suena igual que afinar de verdad, pero sirve para probar una canción rápido.
+- **Afinación virtual**: un efecto que agregas como cualquier otro. Con la guitarra en estándar, suena en la afinación que elijas (Drop D, Drop C, medio tono abajo…) sin tocar las clavijas. Lo que cambian todas las cuerdas se mueve junto (~25 ms); las cuerdas graves que cambian solas, como la 6ª en Drop D, se mueven nota por nota reconociendo la nota más grave (~85 ms, o ~43 ms con «Menos demora»). No es igual que afinar de verdad, pero sirve para salir del paso. También en el modo Juego, con el puntaje ajustado.
 - **Plugins AU y VST3**, con su propia ventana y compensación de demora.
 - **Baterista automático** con más de 35 estilos en 8 géneros (rock, metal, pop, funk y soul, hip hop y electrónica, latino, jazz y blues, country y folk): punk, thrash con doble bombo, death metal con blast beat, trap, cumbia, cuarteto, bossa, reggae y más. Sencillo/complejo, suave/fuerte, redobles y swing. Toca como una persona: mantiene un groove, lo varía al final de cada frase y hace redobles distintos. Escucha la guitarra o el bajo que grabaste: marca sus golpes con el bombo y toca más fuerte o más suave según cómo toques.
 - **La canción por partes**: el baterista arranca con la canción armada (intro, estrofa, estribillo, estrofa, estribillo, puente, estribillo y final), una región por parte. Cada una se alarga, se mueve o se genera de nuevo sin tocar las demás. Toca cada parte distinto, entra con un platillo, hace un redoble antes de cada cambio y termina con un golpe final.
@@ -56,6 +56,8 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 - **Notas en inglés (C D E) o en español (Do Re Mi)**, a elección, en el estudio y en el juego.
 - El orden de las cuerdas se puede poner como tablatura o con la grave arriba. El tamaño se ajusta con − y +.
 - Muestra acordes, notas largas, bends, slides, ligados, palm mute, armónicos, vibrato, partes de la canción, letra y un diapasón con la posición de la mano.
+- **Tablatura clásica**: además de la vista con colores, una tablatura blanca como las de internet (h, p, /, \, b, r, ~, x, <12>, P.M.) que corre bajo la línea.
+- **Cuerdas al derecho o al revés**, por separado en 2D y en 3D.
 - **Ves lo que tocaste, como en Rocksmith**: cada nota que aciertas da un destello breve en el color de su cuerda; las notas largas que mantienes bien echan algunas chispas; las que erras se apagan y marcan una ✕ chica. Las rachas largas aparecen a un costado («¡25 seguidas!»). Las notas con palm mute llevan una X.
 - **Marca los aciertos al instante**: en cuanto oye la nota (~0,1 s; en las cuerdas más graves ~0,2 s), sin esperar a que termine su margen de tiempo.
 - **Te escucha y te da puntos**: reconoce las notas y acordes que tocas, si llegaste a tiempo y si mantuviste las notas largas. Lleva racha, multiplicador y precisión. Al final ves un resumen por parte y puedes practicar la parte que más te costó.

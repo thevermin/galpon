@@ -100,7 +100,7 @@ const std::vector<BuiltinInfo>& builtinTypes()
         { "chorus",  "Chorus",              "effect", "Ensancha y da movimiento" },
         { "delay",   "Delay",               "effect", "Eco sincronizado al tempo" },
         { "reverb",  "Reverb",              "effect", "Ambiente de sala" },
-        { "retune",  juce::String (u8"Afinación virtual"), "effect", juce::String (u8"Tu guitarra suena más grave o más aguda, sin reafinarla") },
+        { "retune",  juce::String (u8"Afinación virtual"), "effect", juce::String (u8"Tu guitarra en estándar suena en otra afinación (Drop D, Drop C…) sin reafinarla") },
     };
     return types;
 }

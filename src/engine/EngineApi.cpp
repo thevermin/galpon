@@ -807,7 +807,7 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
         auto* t = trackArg();
         if (t == nullptr || t->kind != TrackKind::Audio) return fail (juce::String (u8"La afinación virtual es para pistas de audio (la de tu guitarra o bajo)"));
         engine.pushUndo();
-        setRetune (t->id, (float) (double) arg (args, "semitones", 0.0));
+        setRetune (t->id, (float) (double) arg (args, "semitones", 0.0), 0, arg (args, "strings", {}));
         changed();
         return ok();
     }
@@ -1589,7 +1589,7 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
         engine.scorerInput = -1;
         engine.setDuckLimitDb (60.0f);   // back to the studio: the limiter does whatever it needs
         restoreGameTone();
-        if (std::abs (gameRetuneSemis) > 0.001f) { setRetune (gameGuitarTrackId, 0.0f); gameRetuneSemis = 0.0f; }
+        if (gameRetuneOn()) { setRetune (gameGuitarTrackId, 0.0f); gameRetuneSemis = 0.0f; gameRetuneStrings = juce::var(); }
         const juce::ScopedLock sl (engine.lock);
         game.close();
         gamePack.reset();
@@ -1648,11 +1648,13 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
     if (cmd == "gameRetune")
     {
         // { semitones }: play a song in another tuning without retuning (on your track and the game's sound)
+        // { semitones?, strings? }: everything moved, or the tuning to sound like string by string
         gameRetuneSemis = juce::jlimit (-7.0f, 7.0f, (float) (double) arg (args, "semitones", 0.0));
-        if (engine.song.findTrack (gameGuitarTrackId) != nullptr) setRetune (gameGuitarTrackId, gameRetuneSemis, 0);
+        gameRetuneStrings = arg (args, "strings", {});
+        if (engine.song.findTrack (gameGuitarTrackId) != nullptr) setRetune (gameGuitarTrackId, gameRetuneSemis, 0, gameRetuneStrings);
         if (gameToneOn && engine.song.findTrack (gameToneTrackId) != nullptr)
         {
-            const int d = setRetune (gameToneTrackId, gameRetuneSemis, 1);   // right after the gate
+            const int d = setRetune (gameToneTrackId, gameRetuneSemis, 1, gameRetuneStrings);   // right after the gate
             if (d != 0) { for (auto& r : gameRigs) r.first += d; gameActiveRig = -2; applyGameTone(); }
         }
         engine.dirty = true; touch();
@@ -2001,7 +2003,7 @@ juce::var EngineApi::gameTone (const juce::var& args)
     }
     gameToneTrackId = t->id;
     engine.addInsert (t->id, "builtin", "gate", -1);
-    if (std::abs (gameRetuneSemis) > 0.001f) setRetune (t->id, gameRetuneSemis, 1);
+    if (gameRetuneOn()) setRetune (t->id, gameRetuneSemis, 1, gameRetuneStrings);
 
     gameRigs.clear();
     gameToneSchedule.clear();
@@ -2072,14 +2074,24 @@ juce::var EngineApi::gameTone (const juce::var& args)
     return ok (juce::var (o));
 }
 
-int EngineApi::setRetune (int trackId, float semitones, int index)
+bool EngineApi::gameRetuneOn() const
 {
+    if (std::abs (gameRetuneSemis) > 0.001f) return true;
+    if (auto* a = gameRetuneStrings.getArray()) for (auto& v : *a) if (std::abs ((double) v) > 0.001) return true;
+    return false;
+}
+
+int EngineApi::setRetune (int trackId, float semitones, int index, const juce::var& strings)
+{
+    // `strings`: the tuning to sound like, string by string (semitones from standard, 6th string first)
+    bool any = std::abs (semitones) > 0.001f;
+    if (auto* a = strings.getArray()) for (auto& v : *a) if (std::abs ((double) v) > 0.001) any = true;
     auto* t = engine.song.findTrack (trackId);
     if (t == nullptr) return 0;
     int at = -1;
     for (size_t i = 0; i < t->inserts.size(); ++i)
         if (auto* b = dynamic_cast<BuiltinProcessor*> (t->inserts[i].processor.get()); b != nullptr && b->getTypeId() == "retune") { at = (int) i; break; }
-    if (std::abs (semitones) < 0.001f)
+    if (! any)
     {
         if (at < 0) return 0;
         engine.removeInsert (trackId, at);
@@ -2096,6 +2108,8 @@ int EngineApi::setRetune (int trackId, float semitones, int index)
         if (auto* b = dynamic_cast<BuiltinProcessor*> (slot->processor.get()))
         {
             b->setReal ("semitones", juce::jlimit (-7.0f, 7.0f, semitones));
+            for (int i = 0; i < 6; ++i)
+                b->setReal ("s" + juce::String (6 - i), (float) juce::jlimit (-7.0, 7.0, strings.isArray() && i < strings.size() ? (double) strings[i] : 0.0));
             const juce::ScopedLock sl (engine.lock);
             slot->bypass = false;
         }

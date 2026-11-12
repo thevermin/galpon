@@ -189,6 +189,17 @@
       if (slotInfo.latency > 0) side.appendChild(el('span.note', { text: `Agrega ${slotInfo.latency} muestras de demora.` }));
     }
     const extra = slotInfo.extra;
+    if (slotInfo.kind === 'builtin' && slotInfo.type === 'retune') {
+      // "Afinación virtual": pick the tuning; the knobs below are the same thing string by string
+      side.appendChild(el('span.note', { text: 'Con tu guitarra en afinación estándar, suena en la afinación que elijas. No es igual que afinar de verdad, pero sirve para salir del paso.' }));
+      side.appendChild(el('select.sel', { 'aria-label': 'Afinación a la que suena', onchange: async (e) => {
+        const v = e.target.value;
+        if (v === '') return;
+        await G.run('setRetune', G.App.virtualRetuneArgs(trackId, G.TUNINGS[+v][1], false));
+        G.toast('Suena en ' + G.TUNINGS[+v][0]);
+      } }, el('option', { value: '', text: 'Elegir afinación…' }), ...G.TUNINGS.map(([nm], i) => el('option', { value: i, text: nm }))));
+      side.appendChild(el('span.note', { text: 'Cuando solo cambian las cuerdas graves (Drop D, Drop C…), reconoce cuál es la nota más grave para moverla sola. «Menos demora» responde más rápido pero separa peor dos notas graves juntas.' }));
+    }
     if (extra && extra.loadable === 'sampler') {
       side.appendChild(el('span.note', { text: extra.status || '' }));
       side.appendChild(el('button.btn.primary', { onclick: async () => {

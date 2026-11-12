@@ -17,7 +17,9 @@
     zoom: store.get('zoom', 1),
     lyrics: store.get('lyrics', true),
     size: store.get('size', 1),                   // the whole highway and fretboard (− / +)
-    invert: store.get('invert', false),           // true: low string on top, like Rocksmith
+    invert: store.get('invert', false),           // 2D: true = low string on top, like Rocksmith
+    invert3d: store.get('invert3d', false),       // 3D: true = low string at the bottom (Rocksmith has it on top)
+    tabStyle: store.get('tabStyle', 'rs'),        // 2D: 'rs' coloured boxes like Rocksmith, 'classic' a plain tab like the ones online
     view: store.get('view', '2d'),                // '2d' tablature highway, '3d' Rocksmith-like neck in perspective
     detect: store.get('detect', true),
     detectOffsetMs: store.get('detectOffsetMs', 0),
@@ -60,7 +62,7 @@
     let name = (t.length === (bass ? 4 : 6) || t.length === 6) ? G.tuningName(t, bass) : 'Personalizada';
     if (name === 'Personalizada') name = openPitches(Object.assign({}, arr, { capo: 0 })).map((p) => NOTE[p % 12]).join(' ');
     if (arr.capo) name += ' · cejilla ' + arr.capo;
-    if (play && play.arr === arr && play.virtualShift) name += ' · virtual';
+    if (play && play.arr === arr && play.virtual) name += ' · virtual';
     return name;
   }
   function kindName(a) {
@@ -268,6 +270,8 @@
     play.maxFret = Math.max(12, ...items.map((n) => (n.f || 0) + 2), ...items.map((n) => (n.slu || n.sl || 0) + 1));
     buildEvents();
     resetScore();
+    // the virtual tuning follows the part you play (another part can be in another tuning)
+    if (play.virtual) setVirtual(true, ((a.tuning && a.tuning.length) ? a.tuning : [0, 0, 0, 0, 0, 0]).slice(0, isBass(a) ? 4 : 6));
   }
 
   /** What the detector listens for: notes that start together are one event (a chord). */
@@ -300,7 +304,7 @@
   function sendNotes() {
     if (!play) return;
     const a = play.arr;
-    G.call('gameNotes', { events: play.events.map((e) => ({ t: e.t, p: e.p, sus: e.sus, l: e.l, m: e.m })), cents: (a.centOffset || 0) - (play.virtualShift || 0) * 100, offsetMs: opts.detectOffsetMs })
+    G.call('gameNotes', { events: play.events.map((e) => ({ t: e.t, p: e.p, sus: e.sus, l: e.l, m: e.m })), cents: play.virtual ? 0 : (a.centOffset || 0), offsetMs: opts.detectOffsetMs })
       .then((r) => { if (r && r.ok) { play.listening = r.data.listening; updateScoreHud(); } });
   }
 
@@ -926,21 +930,27 @@
     G.App.showTuner({
       offsets, bass, capo: a.capo || 0, trackId: g.trackId,
       title: play.song.title + ' · ' + kindName(a),
-      virtualShift: play.virtualShift || 0,
+      virtualOn: !!play.virtual,
       note: 'La afinación de esta canción. Toca una cuerda al aire por vez.',
-      onVirtual: (shift) => setVirtual(shift),
+      onVirtual: (on, offs) => setVirtual(on, offs),
     });
   }
 
-  /** "Afinación virtual": your guitar sounds `shift` semitones away, so you can play without retuning */
-  async function setVirtual(shift) {
-    const r = await G.call('gameRetune', { semitones: shift });
+  /** "Afinación virtual": your guitar stays in standard and an effect makes it sound in the song's tuning */
+  async function setVirtual(on, offsets) {
+    const a = play.arr;
+    const args = G.App.virtualRetuneArgs(0, on ? offsets : null, isBass(a));
+    const r = await G.call('gameRetune', { semitones: args.semitones, strings: args.strings });
     if (!r || !r.ok) { G.toast((r && r.error) || 'No se pudo', true); return; }
-    play.virtualShift = shift;
-    sendNotes();   // the notes you play now sound (and are heard) shifted: so is what to listen for
-    const tl = ui.hwwrap && ui.hwwrap.closest ? document.querySelector('.g-tuning') : null;
-    if (tl) tl.textContent = ' · ' + tuningName(play.arr);
-    G.toast(shift ? 'Afinación virtual: tu guitarra suena ' + Math.abs(shift) + (Math.abs(shift) === 1 ? ' semitono ' : ' semitonos ') + (shift < 0 ? 'más grave' : 'más aguda') : 'Afinación virtual apagada');
+    play.virtual = on;
+    // what the detector listens for: the notes as they come out of your standard-tuned guitar
+    const tuning = (a.tuning && a.tuning.length) ? a.tuning : [0, 0, 0, 0, 0, 0];
+    play.pitches = openPitches(on ? Object.assign({}, a, { tuning: tuning.map(() => 0) }) : a);
+    buildEvents();
+    sendNotes();
+    const tl = document.querySelector('.g-tuning');
+    if (tl) tl.textContent = ' · ' + tuningName(a);
+    G.toast(on ? 'Afinación virtual: con tu guitarra en estándar suena en ' + G.tuningName(tuning, isBass(a)) : 'Afinación virtual apagada');
   }
 
   // ------------------------------------------------------------------ help & options
@@ -986,8 +996,12 @@
         el('h4', { text: 'Cómo se ve' }),
         el('div.g-optrow', null, el('label', { text: 'Vista' }), seg([['2d', 'Tablatura (2D)'], ['3d', 'Mástil en 3D, como Rocksmith'], ['both', 'Las dos a la vez']], opts.view, (v) => setView(v))),
         el('div.g-optrow', null, el('label', { text: 'Notas y acordes' }), seg([['en', 'C D E (inglés)'], ['es', 'Do Re Mi']], G.namesEs() ? 'es' : 'en', (v) => { G.setNames(v); lyricKey = null; })),
-        el('div.g-optrow', null, el('label', { text: 'Orden de las cuerdas' }),
-          seg([['tab', 'Como tablatura (aguda arriba)'], ['rs', 'Como Rocksmith (grave arriba)']], opts.invert ? 'rs' : 'tab', (v) => { opts.invert = v === 'rs'; store.set('invert', opts.invert); })),
+        el('div.g-optrow', null, el('label', { text: 'Estilo de la tablatura (2D)' }),
+          seg([['rs', 'Con colores, como Rocksmith'], ['classic', 'Tablatura clásica (blanca)']], opts.tabStyle, (v) => { opts.tabStyle = v; store.set('tabStyle', v); })),
+        el('div.g-optrow', null, el('label', { text: 'Cuerdas en 2D' }),
+          seg([['tab', 'Normal (aguda arriba)'], ['rs', 'Al revés (grave arriba)']], opts.invert ? 'rs' : 'tab', (v) => { opts.invert = v === 'rs'; store.set('invert', opts.invert); })),
+        el('div.g-optrow', null, el('label', { text: 'Cuerdas en 3D' }),
+          seg([['rs', 'Normal (grave arriba, como Rocksmith)'], ['inv', 'Al revés (grave abajo)']], opts.invert3d ? 'inv' : 'rs', (v) => { opts.invert3d = v === 'inv'; store.set('invert3d', opts.invert3d); })),
         el('div.g-optrow', null, el('label', { text: 'Colores de las cuerdas' }), seg([['classic', 'Clásicos'], ['soft', 'Suaves']], opts.palette, (v) => { opts.palette = v; store.set('palette', v); })),
         el('div.g-optrow', null, el('label', { text: 'Separación de las notas' }), zoom),
         el('p.note', { text: 'El tamaño de todo se cambia con − y + sobre las notas (o ⌘ y la rueda del mouse).' }),
@@ -1153,7 +1167,8 @@
     if (!play || !hw || !hw.isConnected) return;
     const now = displayPos();
     if (opts.view !== '2d') drawHighway3D(now);
-    if (opts.view !== '3d') drawHighway(now);
+    if (ui.hwwrap) ui.hwwrap.classList.toggle('g-classic', opts.tabStyle === 'classic' && opts.view === '2d');
+    if (opts.view !== '3d') (opts.tabStyle === 'classic' ? drawTabClassic : drawHighway)(now);
     if (play.countdown) { const c = opts.view === '2d' ? hw : hw3; const cx = c.getContext('2d'); cx.setTransform(1, 0, 0, 1, 0, 0); drawCountdown(cx, c.width, c.height); }
     if (opts.view === '2d') drawFretboard(now);
     drawLyrics(now);
@@ -1171,6 +1186,141 @@
     } else ui.feedback.style.opacity = '0';
     const lv = Math.max(0, Math.min(1, (20 * Math.log10(Math.max(play.inputLevel || 0, 1e-5)) + 60) / 54));
     ui.level.style.height = Math.round(lv * 100) + '%';
+  }
+
+
+  // ------------------------------------------------------------------ 2D: a plain tab, like the ones online
+  // White, thin lines, fret numbers and the usual signs (h p / \ b r ~ x <12> P.M. >), scrolling under
+  // a play line. No colours or glow: just the tab.
+  const TAB_STRING_NAMES = (pitch, i, n) => { const nm = NOTE[pitch % 12]; return i === n - 1 && n >= 6 ? nm.toLowerCase() : nm; };
+  function drawTabClassic(now) {
+    const { ctx, w, h } = fit(hw);
+    const p = play, d = dims(), n = d.n;
+    const hitX = Math.round(Math.min(220, w * 0.17));
+    const pps = d.pps;
+    const laneH = Math.max(14, Math.round(d.laneH * 0.62));
+    const top = Math.max(30, Math.round((h - (n - 1) * laneH) / 2));
+    const rowY = (s) => top + rowOf(s, n) * laneH;
+    const xOf = (t) => hitX + (t - now) * pps;
+    const t0 = now - hitX / pps, t1 = now + (w - hitX) / pps;
+    const yTop = rowY(opts.invert ? 0 : n - 1), yBottom = rowY(opts.invert ? n - 1 : 0);
+    const INK = '#1d1d1f', SOFT = '#8a8a90', PAPER = '#fbfaf7';
+    const fs = Math.max(11, Math.round(laneH * 0.78));
+    const mono = '600 ' + fs + 'px "JetBrains Mono", Menlo, Consolas, monospace';
+    const small = '600 ' + Math.max(9, Math.round(fs * 0.7)) + 'px Inter, system-ui, sans-serif';
+
+    ctx.fillStyle = PAPER; ctx.fillRect(0, 0, w, h);
+    if (p.loop) {
+      const xa = Math.max(0, xOf(p.loop.a)), xb = Math.min(w, xOf(p.loop.b));
+      if (xb > xa) { ctx.fillStyle = 'rgba(230,168,74,0.12)'; ctx.fillRect(xa, yTop - 10, xb - xa, yBottom - yTop + 20); }
+    }
+
+    // strings and their names
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    ctx.font = '700 ' + Math.max(10, Math.round(fs * 0.85)) + 'px "JetBrains Mono", Menlo, Consolas, monospace';
+    for (let s = 0; s < n; s++) {
+      const y = Math.round(rowY(s)) + 0.5;
+      ctx.fillStyle = '#b9b9be'; ctx.fillRect(32, y - 0.5, w - 32, 1);
+      ctx.fillStyle = INK; ctx.fillText(TAB_STRING_NAMES(p.pitches[s], s, n), 16, y);
+    }
+    // bar lines and numbers (beats: nothing, like a printed tab)
+    ctx.font = small; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    for (let i = lowerBound(p.beats, t0 - 0.1, 'time'); i < p.beats.length && p.beats[i].time <= t1; i++) {
+      const b = p.beats[i];
+      if (b.measure < 0) continue;
+      const x = Math.round(xOf(b.time)) + 0.5;
+      if (x < 32) continue;
+      ctx.fillStyle = '#6e6e74'; ctx.fillRect(x, yTop, 1, yBottom - yTop);
+      ctx.fillStyle = SOFT; ctx.fillText(String(b.measure), x + 3, yTop - 3);
+    }
+    // sections, under the tab
+    ctx.font = '700 ' + Math.max(10, Math.round(fs * 0.75)) + 'px Inter, system-ui, sans-serif'; ctx.textBaseline = 'top';
+    for (const sct of p.sections) {
+      const x = xOf(sct.time);
+      if (x < hitX - 60 || x > w) continue;
+      ctx.fillStyle = '#b26b00'; ctx.fillText(sectionName(sct), x + 2, yBottom + 10);
+    }
+    // chord names, above
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.font = '700 ' + Math.max(11, Math.round(fs * 0.85)) + 'px Inter, system-ui, sans-serif';
+    for (let i = lowerBound(p.chords, t0 - 1, 't'); i < p.chords.length && p.chords[i].t <= t1 + 0.1; i++) {
+      const c = p.chords[i], prev = p.chords[i - 1];
+      if (prev && prev.id === c.id && c.t - prev.t < 2.5) continue;
+      const name = p.chordName(c.id);
+      if (name) { ctx.fillStyle = INK; ctx.fillText(name, xOf(c.t), yTop - 16); }
+    }
+
+    // notes
+    const first = lowerBound(p.items, t0 - 15, 't');
+    const pmRuns = [];          // palm-mute spans, for one "P.M. - - -" line above
+    const cw = (txt) => ctx.measureText(txt).width;
+    ctx.textBaseline = 'middle';
+    for (let i = first; i < p.items.length && p.items[i].t <= t1 + 0.2; i++) {
+      const nt = p.items[i], s = nt.s | 0;
+      if (s < 0 || s >= n) continue;
+      const x = xOf(nt.t), y = rowY(s);
+      const end = x + (nt.sus || 0) * pps;
+      if (end < 0 && x < 0) continue;
+      if (nt.pm) {
+        const last = pmRuns[pmRuns.length - 1];
+        if (last && x - last.b < pps * 0.6) last.b = Math.max(last.b, x); else pmRuns.push({ a: x, b: x });
+      }
+      // the fret as written in a tab: 7, x, <12>, 7b9, 7~
+      let txt = nt.mt || nt.fhm ? 'x' : String(nt.f | 0);
+      if (nt.hm) txt = '<' + txt + '>';
+      if (nt.hp) txt = txt + '(PH)';
+      const bend = nt.bnv && nt.bnv.length ? Math.max(...nt.bnv.map((b) => b.v || 0)) : nt.bn || 0;
+      if (bend > 0) txt += 'b' + ((nt.f | 0) + Math.round(bend * 2));
+      if (bend > 0 && nt.bnv && nt.bnv.length > 1 && (nt.bnv[nt.bnv.length - 1].v || 0) < bend - 0.2) txt += 'r' + (nt.f | 0);
+      if (nt.vb) txt += '~';
+      ctx.font = mono;
+      const tw = cw(txt);
+      // knock the line out behind the number, so it reads
+      ctx.fillStyle = PAPER; ctx.fillRect(x - tw / 2 - 2, y - fs * 0.55, tw + 4, fs * 1.1);
+      const mk = p.marks.get(i);
+      ctx.fillStyle = mk ? (mk.hit ? '#1b7a3a' : '#c0392b') : x < hitX - 4 ? '#9a9aa0' : INK;   // what you played: a quiet green or red, nothing more
+      ctx.fillText(txt, x, y + 1);
+      // hammer-on / pull-off / tap: the letter between this note and the one before on the same string
+      ctx.font = small; ctx.fillStyle = SOFT;
+      if (nt.ho || nt.po) ctx.fillText(nt.ho ? 'h' : 'p', x - Math.max(12, pps * 0.06), y - fs * 0.7);
+      if (nt.tp) ctx.fillText('t', x, y - fs * 0.8);
+      if (nt.ac) ctx.fillText('>', x, y - fs * 0.85);
+      // slides: / or \ towards the fret it goes to
+      const to = nt.sl > 0 ? nt.sl : nt.slu > 0 ? nt.slu : 0;
+      if (to) {
+        ctx.font = mono; ctx.fillStyle = INK;
+        const sx = x + tw / 2 + Math.max(8, Math.min(26, (nt.sus || 0.3) * pps * 0.5));
+        ctx.fillText(to > (nt.f | 0) ? '/' : '\\', sx, y + 1);
+        if (nt.sl > 0) { const t2 = String(nt.sl); ctx.fillStyle = PAPER; ctx.fillRect(sx + 6, y - fs * 0.55, cw(t2) + 4, fs * 1.1); ctx.fillStyle = INK; ctx.fillText(t2, sx + 8 + cw(t2) / 2, y + 1); }
+      }
+      // tremolo picking: the slashes over the note
+      if (nt.tr) { ctx.font = small; ctx.fillStyle = INK; ctx.fillText('///', x, y - fs * 0.85); }
+    }
+    // the names' column stays clean: notes that went by slide under it
+    ctx.fillStyle = PAPER; ctx.fillRect(0, yTop - 30, 30, yBottom - yTop + 60);
+    ctx.font = '700 ' + Math.max(10, Math.round(fs * 0.85)) + 'px "JetBrains Mono", Menlo, Consolas, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = INK;
+    for (let s = 0; s < n; s++) ctx.fillText(TAB_STRING_NAMES(p.pitches[s], s, n), 16, Math.round(rowY(s)) + 0.5);
+    // P.M. over the whole tab
+    ctx.font = small; ctx.fillStyle = INK; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    for (const r of pmRuns) {
+      const y = yTop - (p.chords.length ? 30 : 14);
+      ctx.fillText('P.M.', r.a - 8, y);
+      const from = r.a - 8 + cw('P.M. ');
+      if (r.b > from + 6) {
+        ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.moveTo(from, y - 5); ctx.lineTo(r.b + 6, y - 5); ctx.lineTo(r.b + 6, y - 1); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+    // the play line
+    ctx.fillStyle = 'rgba(200,40,40,0.85)'; ctx.fillRect(hitX - 1, yTop - 14, 2, yBottom - yTop + 28);
+    // count-in before the first note
+    if (p.items.length && now < p.items[0].t && p.items[0].t - now < 4 && p.playing) {
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#b26b00'; ctx.font = '700 28px "Space Grotesk", Inter, sans-serif';
+      ctx.fillText(String(Math.ceil(p.items[0].t - now)), hitX / 2, (yTop + yBottom) / 2);
+    }
+    ctx.textAlign = 'left';
   }
 
   function drawHighway(now) {
@@ -1431,7 +1581,7 @@
     const depth = (spanW * 4.2) / ahead;                 // world units per second: a long road
     const strGap = Math.min(0.32, 1.7 / n) * Math.min(1.25, Math.max(0.8, s)) * spanW / span;
     // Like Rocksmith: the thickest string on top (as you see your own guitar looking down)
-    const hOf = (str) => (n - str) * strGap;            // height above the floor: string 0 (the lowest) highest
+    const hOf = (str) => (opts.invert3d ? str + 1 : n - str) * strGap;   // height above the floor: the lowest string highest (or lowest, inverted)
     // The camera sits above and behind, off to the right of the hand; low on the neck it looks
     // across more, higher up it comes round towards the middle (the neck turns as you move)
     // Behind the neck and a little above, almost straight down the road (like Rocksmith); a slight

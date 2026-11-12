@@ -686,21 +686,32 @@
   const saveTuner = () => { try { localStorage.setItem('galpon.tuner', JSON.stringify(tunerState)); } catch (e) { /* no storage */ } };
   const TUNER_COLOURS = ['#ef4444', '#facc15', '#3b82f6', '#f59e0b', '#22c55e', '#a855f7'];
 
-  /** opts: { offsets, bass, capo, strings, title, virtualShift, onVirtual(shift, byHand) } — from the game, the song's tuning */
+  /** opts: { offsets, bass, capo, title, virtualOn, onVirtual(on, offsets) } — from the game, the song's tuning */
+  /** What the "Afinación virtual" effect needs to make a standard guitar sound in `offsets` (null: off).
+      A bass only moves as a whole (its strings are too low to tell apart). */
+  function virtualRetuneArgs(trackId, offsets, bass) {
+    if (!offsets) return { trackId, semitones: 0, strings: [0, 0, 0, 0, 0, 0] };
+    if (bass) {
+      const count = {};
+      offsets.forEach((v) => { count[v] = (count[v] || 0) + 1; });
+      const mode = +Object.keys(count).sort((a, b) => count[b] - count[a])[0];
+      return { trackId, semitones: mode, strings: [0, 0, 0, 0, 0, 0] };
+    }
+    const six = offsets.slice(0, 6); while (six.length < 6) six.push(0);
+    return { trackId, semitones: 0, strings: six };
+  }
+  A.virtualRetuneArgs = virtualRetuneArgs;
+
   A.showTuner = function (opts) {
     opts = opts || {};
     const st = opts.offsets
       ? { offsets: opts.offsets.slice(), bass: !!opts.bass, capo: opts.capo || 0, ref: tunerState.ref || 440 }
       : tunerState;
-    let virtualShift = opts.virtualShift || 0;   // already shifting (the game remembers it)
+    let virtualOn = !!opts.virtualOn;   // the guitar stays in standard and an effect makes it sound like this tuning
     const n = () => (st.bass ? 4 : 6);
     const colour = (i) => (G.stringColour ? G.stringColour(i) : TUNER_COLOURS[i]) || '#ccc';
-    // what the guitar itself must be tuned to: with the virtual tuning on, only what's left to do by hand
-    const physical = () => {
-      if (!virtualShift) return st.offsets.slice(0, n());
-      const vt = G.virtualTuning(st.offsets, st.bass);
-      return vt ? vt.byHand : st.offsets.slice(0, n());
-    };
+    // what the guitar itself must be tuned to: with the virtual tuning on, standard
+    const physical = () => (virtualOn ? new Array(n()).fill(0) : st.offsets.slice(0, n()));
     const targets = () => G.tuningPitches(physical(), st.bass, n());
     const hz = (midi) => st.ref * Math.pow(2, (midi - 69) / 12);
     let active = -1, inTuneSince = 0;
@@ -725,7 +736,7 @@
           'aria-label': 'Afinación', onchange: (e) => {
             const v = e.target.value;
             if (v === 'custom') return;
-            st.offsets = G.TUNINGS[+v][1].slice(); done.clear(); virtualShift = 0; saveIt(); draw();
+            st.offsets = G.TUNINGS[+v][1].slice(); done.clear(); virtualOn = false; saveIt(); draw();
           },
         }, ...G.TUNINGS.map(([nm], i) => el('option', { value: i, text: nm, selected: nm === name })),
           el('option', { value: 'custom', text: 'Personalizada (cuerda por cuerda)', selected: name === 'Personalizada' }));
@@ -745,9 +756,9 @@
           const nm = G.noteName ? G.noteName(tgs[i]) : String(tgs[i]);
           const off = st.offsets[i] || 0;
           strings.append(el('div.t2-string' + (i === active ? '.on' : '') + (done.has(i) ? '.ok' : ''), { style: { '--c': c } },
-            el('button.t2-step', { 'aria-label': 'Subir medio tono la cuerda ' + (n() - i), title: 'Medio tono más agudo', onclick: () => { st.offsets[i] = Math.min(7, off + 1); done.delete(i); virtualShift = 0; saveIt(); draw(); } }, '▲'),
+            el('button.t2-step', { 'aria-label': 'Subir medio tono la cuerda ' + (n() - i), title: 'Medio tono más agudo', onclick: () => { st.offsets[i] = Math.min(7, off + 1); done.delete(i); virtualOn = false; saveIt(); draw(); } }, '▲'),
             el('div.t2-note', { text: nm.replace(/-?\d+$/, '') }, el('small', { text: (nm.match(/-?\d+$/) || [''])[0] })),
-            el('button.t2-step', { 'aria-label': 'Bajar medio tono la cuerda ' + (n() - i), title: 'Medio tono más grave', onclick: () => { st.offsets[i] = Math.max(-7, off - 1); done.delete(i); virtualShift = 0; saveIt(); draw(); } }, '▼'),
+            el('button.t2-step', { 'aria-label': 'Bajar medio tono la cuerda ' + (n() - i), title: 'Medio tono más grave', onclick: () => { st.offsets[i] = Math.max(-7, off - 1); done.delete(i); virtualOn = false; saveIt(); draw(); } }, '▼'),
             el('span.t2-off', { text: phys[i] ? (phys[i] > 0 ? '+' : '') + phys[i] : 'estándar' })));
         }
 
@@ -765,40 +776,32 @@
           el('select.sel', { onchange: (e) => { st.capo = +e.target.value; saveIt(); draw(); } },
             ...Array.from({ length: 13 }, (_, k) => el('option', { value: k, text: k ? 'Traste ' + k : 'Sin cejilla', selected: k === st.capo }))));
 
-        // the virtual tuning
-        const vt = G.virtualTuning(st.offsets, st.bass);
+        // the virtual tuning: the guitar stays in standard, an effect makes it sound like this tuning
         let virtual = null;
-        if (name !== 'Estándar' || virtualShift) {
-          if (!vt || vt.shift === 0) {
-            virtual = el('div.t2-virtual', null, el('div', null, el('b', { text: 'Afinación virtual' }),
-              el('span', { text: vt && vt.shift === 0 ? ' — No hace falta: con las cuerdas agudas en estándar, solo afina a mano las que cambian.' : ' — Esta afinación cambia cuerdas distintas entre sí: hay que afinarla a mano.' })));
-          } else {
-            const dir = vt.shift < 0 ? 'más grave' : 'más aguda';
-            const st2 = Math.abs(vt.shift) === 1 ? 'medio tono' : Math.abs(vt.shift) === 2 ? 'un tono' : Math.abs(vt.shift) + ' semitonos';
-            const by = vt.byHandName === 'Estándar' ? 'Deja tu guitarra en estándar.' : 'Afina tu guitarra en ' + vt.byHandName + ' (es más fácil).';
-            virtual = el('div.t2-virtual' + (virtualShift ? '.on' : ''), null,
-              el('div', null, el('b', { text: 'Afinación virtual' }), el('span', { text: virtualShift
-                ? ` — Prendida: Galpon hace sonar tu guitarra ${st2} ${dir}. ${by} El afinador ya te muestra a qué afinarla.`
-                : ` — Para no reafinar: Galpon hace sonar tu guitarra ${st2} ${dir}. ${by} Nunca suena igual que afinar de verdad, pero sirve para probar una canción rápido.` })),
-              el('button.btn' + (virtualShift ? '' : '.primary'), { onclick: async () => {
-                const next = virtualShift ? 0 : vt.shift;
-                if (opts.onVirtual) await opts.onVirtual(next, vt);
-                else {
-                  const t = currentTrack();
-                  if (!t || t.kind !== 'audio') { G.toast('Elige la pista de audio de tu guitarra o bajo', true); return; }
-                  const r = await G.call('setRetune', { trackId: t.id, semitones: next });
-                  if (!r || !r.ok) { G.toast((r && r.error) || 'No se pudo', true); return; }
-                  A.refresh && A.refresh();
-                }
-                virtualShift = next; done.clear(); draw();
-                if (!opts.onVirtual) G.toast(next ? 'Afinación virtual prendida en la pista' : 'Afinación virtual apagada');
-              } }, virtualShift ? 'Apagar' : 'Usar afinación virtual'));
-          }
+        if (name !== 'Estándar' || virtualOn) {
+          virtual = el('div.t2-virtual' + (virtualOn ? '.on' : ''), null,
+            el('div', null, el('b', { text: 'Afinación virtual' }), el('span', { text: virtualOn
+              ? ` — Prendida: deja la guitarra en estándar y Galpon la hace sonar en ${name}. El afinador ya te muestra la afinación estándar.`
+              : ` — Sin tocar las clavijas: con la guitarra en estándar, Galpon la hace sonar en ${name}. Las cuerdas graves que cambian solas (como la 6ª en Drop D) se reconocen por la nota más grave: casi siempre acierta, no siempre. Nunca suena igual que afinar de verdad.` })),
+            el('button.btn' + (virtualOn ? '' : '.primary'), { onclick: async () => {
+              const next = !virtualOn;
+              const offs = st.offsets.slice(0, n());
+              if (opts.onVirtual) await opts.onVirtual(next, offs);
+              else {
+                const t = currentTrack();
+                if (!t || t.kind !== 'audio') { G.toast('Elige la pista de audio de tu guitarra o bajo', true); return; }
+                const r = await G.call('setRetune', virtualRetuneArgs(t.id, next ? offs : null, st.bass));
+                if (!r || !r.ok) { G.toast((r && r.error) || 'No se pudo', true); return; }
+                A.refresh && A.refresh();
+                G.toast(next ? 'Afinación virtual en la pista: ' + name : 'Afinación virtual apagada');
+              }
+              virtualOn = next; done.clear(); draw();
+            } }, virtualOn ? 'Apagar' : 'Usar afinación virtual'));
         }
 
         wrap.append(
           el('div.t2-head', null,
-            el('div.t2-name', null, el('small', { text: opts.title || (st.bass ? 'Bajo' : 'Guitarra') }), el('b', { text: virtualShift && vt ? vt.byHandName + ' → ' + name : name })),
+            el('div.t2-name', null, el('small', { text: opts.title || (st.bass ? 'Bajo' : 'Guitarra') }), el('b', { text: virtualOn ? 'Estándar → ' + name : name })),
             el('div.t2-controls', null, opts.offsets ? null : kind, presets, ref)),
           strings,
           meter, ui.cents, ui.hint, listen,

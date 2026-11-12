@@ -584,3 +584,11 @@ body.in-game #app { visibility: hidden; }
 .t2-listen { display: flex; align-items: center; gap: 10px; justify-content: center; color: var(--muted); font-size: 12px; }
 .t2-level { width: 120px; height: 6px; border-radius: 3px; background: var(--deep); border: 1px solid var(--line2); overflow: hidden; }
 .t2-level i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #22c55e, #facc15 80%, #ef4444); transition: width .1s; }
+
+/* the plain white tab: the lyrics in ink, no glow */
+.g-classic .g-lyrics { color: #1d1d1f; text-shadow: none; }
+.g-classic .g-lyrics * { text-shadow: none; }
+.g-classic .g-lyr-now { color: #9a9aa0; }
+.g-classic .g-lyr-now .sung { color: #1d1d1f; }
+.g-classic .g-lyr-now .now { color: #b26b00; }
+.g-classic .g-lyr-next { color: #8a8a90; }
