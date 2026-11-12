@@ -120,6 +120,13 @@ namespace
     };
 
     //==========================================================================
+    /** A noise gate made for guitars. It silences the hum and hiss of the pickups and the interface
+        between notes, which an amp turns into a loud, bassy static. Unlike a plain gate it:
+        - opens fast and closes smoothly (a hold, then a fade), with hysteresis, so a note dying near
+          the threshold doesn't make it flutter open and shut — that flutter is a gritty crackle;
+        - follows peaks, not an RMS that ripples with every cycle of a low note;
+        - in "Automático" learns the noise of your input (the quietest moments of the last seconds)
+          and sits just above it, so it works with any guitar, interface or gain. */
     class GateEffect : public EffectBase
     {
     public:
@@ -127,22 +134,72 @@ namespace
         {
             addParam ("threshold", "Umbral", -90.0f, -10.0f, -55.0f, "dB");
             addParam ("release", juce::String (u8"Liberación"), 10.0f, 500.0f, 80.0f, "ms", 80.0f);
+            addParam ("auto", juce::String (u8"Automático"), 0.0f, 1.0f, 1.0f);
         }
 
-        void prepareToPlay (double sr, int bs) override { gate.prepare ({ sr, (juce::uint32) bs, 2 }); }
+        void prepareToPlay (double sr, int) override
+        {
+            sampleRate = sr;
+            env = 0.0f; gain = 0.0f; holdLeft = 0; open = false;
+            frameLen = juce::jmax (64, (int) (sr * 0.05));
+            frameSum = 0.0; frameCount = 0;
+            frames.fill (0.0004f); framePos = 0;   // until it has heard your input: a typical interface (~ -68 dB)
+            noiseDb = -70.0f;
+        }
+        double getTailLengthSeconds() const override { return 0.5; }
+
+        /** Where it's opening now (for the UI) */
+        float currentThresholdDb() const { return thresholdDb; }
 
         void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
         {
-            gate.setThreshold (get ("threshold"));
-            gate.setRatio (20.0f);
-            gate.setAttack (1.0f);
-            gate.setRelease (get ("release"));
-            juce::dsp::AudioBlock<float> block (b);
-            gate.process (juce::dsp::ProcessContextReplacing<float> (block));
+            const int n = b.getNumSamples(), chans = juce::jmin (2, b.getNumChannels());
+            if (n == 0 || chans == 0) return;
+            const bool automatic = get ("auto") > 0.5f;
+            thresholdDb = automatic ? juce::jlimit (-78.0f, -30.0f, noiseDb + 9.0f) : get ("threshold");
+            const float openAt = juce::Decibels::decibelsToGain (thresholdDb);
+            const float closeAt = openAt * 0.5f;                              // 6 dB of hysteresis
+            const float envFall = std::exp (-1.0f / (0.02f * (float) sampleRate));   // the peak follower: 20 ms
+            const float up = 1.0f - std::exp (-1.0f / (0.0008f * (float) sampleRate));
+            const float down = 1.0f - std::exp (-1.0f / (0.001f * get ("release") * (float) sampleRate));
+            const int hold = (int) (0.05 * sampleRate);
+            auto* l = b.getWritePointer (0);
+            auto* r = chans > 1 ? b.getWritePointer (1) : nullptr;
+            for (int i = 0; i < n; ++i)
+            {
+                const float a = r != nullptr ? std::max (std::abs (l[i]), std::abs (r[i])) : std::abs (l[i]);
+                env = a > env ? a : env * envFall;
+                if (env > openAt) { open = true; holdLeft = hold; }
+                else if (env < closeAt) { if (holdLeft > 0) --holdLeft; else open = false; }
+                else if (holdLeft > 0) --holdLeft;
+                const float target = open ? 1.0f : 0.0f;
+                gain += (target - gain) * (target > gain ? up : down);
+                l[i] *= gain;
+                if (r != nullptr) r[i] *= gain;
+
+                // learn the noise: the quietest 50 ms of the last ~4 s
+                frameSum += (double) a * a;
+                if (++frameCount >= frameLen)
+                {
+                    frames[(size_t) framePos] = (float) std::sqrt (frameSum / frameCount);
+                    framePos = (framePos + 1) % (int) frames.size();
+                    frameSum = 0.0; frameCount = 0;
+                    float lo = 1.0f;
+                    for (auto f : frames) lo = std::min (lo, f);
+                    // RMS of noise to dB, a little above its peaks (noise peaks ~ 3x its RMS)
+                    noiseDb = juce::Decibels::gainToDecibels (lo * 3.0f, -100.0f);
+                }
+            }
         }
 
     private:
-        juce::dsp::NoiseGate<float> gate;
+        double sampleRate = 48000.0;
+        float env = 0.0f, gain = 0.0f, thresholdDb = -55.0f, noiseDb = -70.0f;
+        int holdLeft = 0;
+        bool open = false;
+        int frameLen = 2400, frameCount = 0, framePos = 0;
+        double frameSum = 0.0;
+        std::array<float, 80> frames {};   // 4 s
     };
 
     //==========================================================================
@@ -350,7 +407,7 @@ namespace
                     x = std::tanh (x * 1.2f / (1.0f + 0.6f * env[ch])) * 0.85f;
                     x = dc[(size_t) ch].processSample (x);
                     if (useCab) x = speaker.process (ch, x) * 1.4f;
-                    d[i] = x * master * 2.0f;
+                    d[i] = x * master * 0.8f;   // ~ -15 dB RMS at the default master: room for the song and the rest of the mix
                 }
             }
         }

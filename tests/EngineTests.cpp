@@ -590,6 +590,83 @@ static void testGuitarTone()
     CHECK (fizz (noise) < before * 0.15, "el gabinete sin archivo IR igual corta los agudos como un parlante");
 }
 
+// GALPON_RENDER_CHAIN=folder: writes a plucked low E through gate+amp+reverb (for listening/analysis)
+static void renderChainForAnalysis()
+{
+    auto out = juce::SystemStats::getEnvironmentVariable ("GALPON_RENDER_CHAIN", {});
+    if (out.isEmpty()) return;
+    const double sr = 48000;
+    for (auto chainName : { "amp", "gate+amp", "gate+amp+reverb", "gate" })
+    {
+        std::vector<std::unique_ptr<juce::AudioProcessor>> fx;
+        for (auto& t : juce::StringArray::fromTokens (chainName, "+", ""))
+        {
+            auto p = createBuiltin (t);
+            p->prepareToPlay (sr, 128);
+            fx.push_back (std::move (p));
+        }
+        const int n = (int) (sr * 6);
+        juce::AudioBuffer<float> buf (2, n);
+        juce::Random rnd (3);
+        for (int i = 0; i < n; ++i)
+        {
+            const double t = i / sr;
+            double y = 0;
+            for (int k = 1; k <= 10; ++k) y += std::exp (-t * (0.5 + 0.3 * k)) / k * std::sin (juce::MathConstants<double>::twoPi * 82.41 * k * t);
+            y *= std::exp (-t * 0.4) * 0.12;   // a DI guitar: peaks around -20 dBFS, decaying to the noise
+            y += 0.0003 * (rnd.nextFloat() * 2 - 1);   // the interface's hiss (~ -70 dB)
+            buf.setSample (0, i, (float) y); buf.setSample (1, i, (float) y);
+        }
+        juce::MidiBuffer midi;
+        for (int i = 0; i < n; i += 128)
+        {
+            juce::AudioBuffer<float> blk (buf.getArrayOfWritePointers(), 2, i, juce::jmin (128, n - i));
+            for (auto& p : fx) p->processBlock (blk, midi);
+        }
+        juce::File f = juce::File (out).getChildFile (juce::String (chainName).replace ("+", "_") + ".wav");
+        f.deleteFile();
+        juce::WavAudioFormat wav;
+        if (auto* os = f.createOutputStream().release())
+            if (auto w = std::unique_ptr<juce::AudioFormatWriter> (wav.createWriterFor (os, sr, 1, 24, {}, 0)))
+                w->writeFromAudioSampleBuffer (buf, 0, n);
+    }
+}
+
+static void testGuitarGate()
+{
+    std::cout << "Puerta de ruido para guitarra\n";
+    const double sr = 48000;
+    auto gate = createBuiltin ("gate");
+    gate->prepareToPlay (sr, 128);
+    juce::Random rnd (5);
+    // 5 s of an interface with hum and hiss (~ -60 dB), with a low E plucked at 2 s that dies away
+    const int n = (int) (sr * 9);
+    juce::AudioBuffer<float> buf (2, n);
+    for (int i = 0; i < n; ++i)
+    {
+        const double t = i / sr;
+        double y = 0.0006 * (rnd.nextFloat() * 2 - 1) + 0.0004 * std::sin (juce::MathConstants<double>::twoPi * 50 * t);
+        if (t > 5.0) { const double tt = t - 5.0; for (int k = 1; k <= 6; ++k) y += 0.15 / k * std::exp (-tt * (0.9 + 0.3 * k)) * std::sin (juce::MathConstants<double>::twoPi * 82.41 * k * tt); }
+        buf.setSample (0, i, (float) y); buf.setSample (1, i, (float) y);
+    }
+    juce::AudioBuffer<float> in; in.makeCopyOf (buf);
+    juce::MidiBuffer midi;
+    for (int i = 0; i < n; i += 128) { juce::AudioBuffer<float> blk (buf.getArrayOfWritePointers(), 2, i, juce::jmin (128, n - i)); gate->processBlock (blk, midi); }
+    auto rmsDb = [&] (const juce::AudioBuffer<float>& b, double a, double z) { return juce::Decibels::gainToDecibels (b.getRMSLevel (0, (int) (a * sr), (int) ((z - a) * sr)), -120.0f); };
+    CHECK (rmsDb (buf, 4.0, 4.9) < -85.0f, "entre notas silencia el ruido de la entrada (" << rmsDb (buf, 4.0, 4.9) << " dB)");
+    CHECK (std::abs (rmsDb (buf, 5.05, 6.0) - rmsDb (in, 5.05, 6.0)) < 0.5f, "la nota pasa entera");
+    // while the note dies: no fluttering (open-shut-open), which sounds like crackle
+    int flips = 0; bool wasOn = true;
+    for (int i = (int) (5.05 * sr); i < n; i += 48)
+    {
+        const float ratio = std::abs (in.getSample (0, i)) > 1.0e-4f ? std::abs (buf.getSample (0, i) / in.getSample (0, i)) : (wasOn ? 1.0f : 0.0f);
+        const bool on = ratio > 0.5f;
+        if (on != wasOn) ++flips;
+        wasOn = on;
+    }
+    CHECK (flips <= 1, "al apagarse la nota se cierra una sola vez, sin titilar (" << flips << " cambios)");
+}
+
 static void testTunerPitch()
 {
     std::cout << "Afinador: detecta cada cuerda\n";
@@ -2615,6 +2692,8 @@ int main()
     testGuitarTone();
     testRetuneAndPresets();
     testTunerPitch();
+    testGuitarGate();
+    renderChainForAnalysis();
     testRecording();
     testRecordingSafety();
     testSaveLoadUndoExport();

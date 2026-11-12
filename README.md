@@ -19,7 +19,7 @@ Versión actual: **0.13**.
 - **Cualquier interfaz de audio**: CoreAudio en Mac; WASAPI y **ASIO** en Windows. Puedes elegir entrada y salida por separado, frecuencia, búfer, canales, entrada mono o estéreo y monitoreo por pista.
 - **Latencia** visible (entrada, salida, ida y vuelta) y compensada al grabar, con ajuste manual.
 - **Instrumentos propios**: piano, piano eléctrico, órgano, sintetizador y batería. Hay un **sampler** SFZ con instrumentos grabados que se descargan con un clic: piano de cola, batería acústica, bajo y guitarra acústica.
-- **Efectos propios**: ecualizador, compresor, puerta de ruido, distorsión, amplificador, **Amp NAM** (capturas `.nam`), gabinete IR, chorus, delay, reverb y **afinación virtual**.
+- **Efectos propios**: ecualizador, compresor, puerta de ruido (aprende sola el ruido de tu entrada), distorsión, amplificador, **Amp NAM** (capturas `.nam`), gabinete IR, chorus, delay, reverb y **afinación virtual**.
 - **20 sonidos listos de guitarra y bajo** (limpios, crunch, distorsión, alta ganancia, solos y bajo), los mismos que usa el modo Juego.
 - **Afinador** al estilo de Rocksmith: el nombre de la afinación, la nota de cada cuerda con su color (la que tocas se ilumina), un medidor de − a +, referencia A ajustable, nivel de entrada (para saber si le llega sonido), 16 afinaciones conocidas (Drop D, Eb, Drop C, Open G, DADGAD…) o cuerda por cuerda, y cejilla.
 - **Afinación virtual**: con la guitarra en estándar suena, por ejemplo, un tono más grave. Para Drop C alcanza con bajar la sexta a Re. Agrega unos 25 ms de demora y nunca suena igual que afinar de verdad, pero sirve para probar una canción rápido.
@@ -56,7 +56,7 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 - **Notas en inglés (C D E) o en español (Do Re Mi)**, a elección, en el estudio y en el juego.
 - El orden de las cuerdas se puede poner como tablatura o con la grave arriba. El tamaño se ajusta con − y +.
 - Muestra acordes, notas largas, bends, slides, ligados, palm mute, armónicos, vibrato, partes de la canción, letra y un diapasón con la posición de la mano.
-- **Ves lo que tocaste, como en Rocksmith**: cada nota que aciertas explota en el color de su cuerda y la cuerda se ilumina; las notas largas que mantienes bien echan chispas; las que erras se apagan y marcan una ✕. Las rachas aparecen en grande («¡25 seguidas!», «x2») y también cuando se corta una.
+- **Ves lo que tocaste, como en Rocksmith**: cada nota que aciertas da un destello breve en el color de su cuerda; las notas largas que mantienes bien echan algunas chispas; las que erras se apagan y marcan una ✕ chica. Las rachas largas aparecen a un costado («¡25 seguidas!»). Las notas con palm mute llevan una X.
 - **Te escucha y te da puntos**: reconoce las notas y acordes que tocas, si llegaste a tiempo y si mantuviste las notas largas. Lleva racha, multiplicador y precisión. Al final ves un resumen por parte y puedes practicar la parte que más te costó.
 - **Práctica**: más despacio sin cambiar el tono (30–100 %), repetir A–B o una parte entera.
 - **Volumen** del Master, de cada instrumento de la canción y de tu guitarra. Hay un atajo para bajar o quitar la guitarra (o el bajo) de la grabación y escucharte mejor, y puedes elegir cuánto baja la canción cuando tocas fuerte.

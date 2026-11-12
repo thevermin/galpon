@@ -314,7 +314,7 @@
   const mult = () => Math.min(4, 1 + Math.floor(play.score.streak / 8));
   // ---- what you played, on screen (like Rocksmith): a burst where each note you hit lands, sparks
   // while you hold a long note well, the note going grey when you miss it, and a banner for streaks
-  const STREAKS = [10, 25, 50, 75, 100, 150, 200];
+  const STREAKS = [25, 50, 100, 150, 200];
   function spawnFx(ev, hit) {
     const p = play, at = performance.now();
     p.fx = (p.fx || []).filter((f) => at - f.at < 1500);
@@ -338,27 +338,27 @@
       const [x, y, g] = q;
       const c = colour(nt.s | 0);
       if (f.hit) {
-        const life = Math.min(1, age / 0.7);
+        const life = Math.min(1, age / 0.4);
         if (life >= 1) continue;
-        const a = 1 - life * life;
+        const a = (1 - life) * 0.8;
         // white flash, then a ring in the string's colour
-        if (age < 0.18) {
-          ctx.globalAlpha = 1 - age / 0.18;
+        if (age < 0.1) {
+          ctx.globalAlpha = (1 - age / 0.1) * 0.7;
           const fl = ctx.createRadialGradient(x, y, 0, x, y, g * 0.9);
           fl.addColorStop(0, 'rgba(255,255,255,0.95)'); fl.addColorStop(0.4, c); fl.addColorStop(1, 'rgba(0,0,0,0)');
           ctx.fillStyle = fl; ctx.beginPath(); ctx.arc(x, y, g * 0.9, 0, 7); ctx.fill();
         }
         ctx.globalAlpha = a;
         ctx.strokeStyle = c; ctx.lineWidth = Math.max(1.5, g * 0.08 * a);
-        ctx.shadowColor = c; ctx.shadowBlur = 16;
-        ctx.beginPath(); ctx.arc(x, y, g * (0.35 + life * (f.chord ? 1.1 : 0.9)), 0, 7); ctx.stroke();
+        ctx.shadowColor = c; ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.arc(x, y, g * (0.4 + life * 0.7), 0, 7); ctx.stroke();
         // sparks flying out (always the same pattern for a note, so it doesn't flicker)
         ctx.fillStyle = c;
-        const nSp = f.chord ? 8 : 12;
+        const nSp = f.chord ? 4 : 6;
         for (let k = 0; k < nSp; k++) {
           const ang = (k / nSp) * Math.PI * 2 + (f.i % 7) * 0.4;
           const sp = g * (0.5 + ((k * 37 + f.i * 11) % 10) / 14);
-          const d = sp * life * 1.6;
+          const d = sp * life * 1.1;
           const sx = x + Math.cos(ang) * d, sy = y + Math.sin(ang) * d * 0.7 + life * life * g * 0.6;
           const r = Math.max(1, g * 0.07 * a);
           ctx.beginPath(); ctx.arc(sx, sy, r, 0, 7); ctx.fill();
@@ -366,11 +366,11 @@
         ctx.shadowBlur = 0;
       } else {
         // a miss: a dull grey puff and a small ✕
-        const life = Math.min(1, age / 0.5);
+        const life = Math.min(1, age / 0.35);
         if (life >= 1) continue;
-        ctx.globalAlpha = (1 - life) * 0.8;
+        ctx.globalAlpha = (1 - life) * 0.6;
         ctx.strokeStyle = '#f87171'; ctx.lineWidth = Math.max(1.5, g * 0.07);
-        const r = g * 0.22;
+        const r = g * 0.15;
         ctx.beginPath(); ctx.moveTo(x - r, y - r - life * g * 0.3); ctx.lineTo(x + r, y + r - life * g * 0.3);
         ctx.moveTo(x + r, y - r - life * g * 0.3); ctx.lineTo(x - r, y + r - life * g * 0.3); ctx.stroke();
       }
@@ -385,15 +385,15 @@
       if (!q) continue;
       const [x, y, g] = q, c = colour(nt.s | 0);
       ctx.fillStyle = c; ctx.shadowColor = c; ctx.shadowBlur = 10;
-      for (let k = 0; k < 5; k++) {
-        const ph = ((t / 380) + k / 5 + i * 0.13) % 1;
+      for (let k = 0; k < 3; k++) {
+        const ph = ((t / 420) + k / 3 + i * 0.13) % 1;
         const ang = -Math.PI / 2 + Math.sin(k * 2.3 + i) * 1.1;
-        ctx.globalAlpha = (1 - ph) * 0.9;
+        ctx.globalAlpha = (1 - ph) * 0.6;
         ctx.beginPath(); ctx.arc(x + Math.cos(ang) * ph * g * 0.9, y + Math.sin(ang) * ph * g * 0.9, Math.max(1, g * 0.06 * (1 - ph)), 0, 7); ctx.fill();
       }
       ctx.shadowBlur = 0;
-      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(t / 60);
-      ctx.strokeStyle = c; ctx.lineWidth = Math.max(1.5, g * 0.05);
+      ctx.globalAlpha = 0.35 + 0.15 * Math.sin(t / 80);
+      ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, g * 0.04);
       ctx.beginPath(); ctx.arc(x, y, g * 0.45, 0, 7); ctx.stroke();
     }
     ctx.restore();
@@ -403,14 +403,14 @@
     const b = play.banner;
     if (!b) return;
     const age = (performance.now() - b.at) / 1000;
-    const dur = b.small ? 0.9 : 1.6;
+    const dur = 1.2;
     if (age > dur) { play.banner = null; return; }
     const pop = age < 0.15 ? 0.6 + 0.4 * (age / 0.15) * 1.15 : age < 0.25 ? 1.1 - 0.1 * ((age - 0.15) / 0.1) : 1;
     const a = age > dur - 0.4 ? (dur - age) / 0.4 : 1;
     ctx.save();
     ctx.globalAlpha = Math.max(0, a);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const size = Math.round((b.small ? 34 : b.streak < 0 ? 22 : 44) * pop * (flat ? 0.6 : 1));
+    const size = Math.round(26 * pop * (flat ? 0.7 : 1));
     ctx.font = '800 ' + size + 'px "Space Grotesk", Inter, sans-serif';
     const y = flat ? size * 0.9 : h * 0.3 - age * 14;
     if (b.streak < 0) ctx.fillStyle = '#fca5a5';
@@ -418,7 +418,7 @@
       const gr = ctx.createLinearGradient(0, y - size / 2, 0, y + size / 2);
       gr.addColorStop(0, '#fff3c4'); gr.addColorStop(1, b.small ? '#7dd3fc' : '#f5a524');
       ctx.fillStyle = gr;
-      ctx.shadowColor = b.small ? '#38bdf8' : '#f59e0b'; ctx.shadowBlur = 24;
+      ctx.shadowColor = '#f59e0b'; ctx.shadowBlur = 10;
     }
     ctx.textAlign = 'right';
     ctx.fillText(b.text.toUpperCase(), w - 28, y);
@@ -449,16 +449,13 @@
       sec.total++;
       if (hit) {
         sc.hits++; sec.hits++; sc.streak++; sc.best = Math.max(sc.best, sc.streak);
-        const up = [10, 20, 30].includes(sc.streak) ? ' · x' + mult() : '';
-        if (STREAKS.includes(sc.streak) || (sc.streak > 200 && sc.streak % 100 === 0)) banner('¡' + sc.streak + ' seguidas!' + up, sc.streak);
-        else if (up) banner('x' + mult(), 0, true);
+        if (STREAKS.includes(sc.streak) || (sc.streak > 200 && sc.streak % 100 === 0)) banner('¡' + sc.streak + ' seguidas!', sc.streak);
         sc.points += 100 * mult();
         if (!ev.l && !ev.m) sc.timings.push(ms);
         const abs = Math.abs(ms);
         p.feedback = ev.l || ev.m || abs <= 35 ? { text: '¡Justo!', tone: 'good', at: performance.now() }
           : { text: (ms < 0 ? 'Temprano' : 'Tarde') + ' · ' + Math.round(abs) + ' ms', tone: 'ok', at: performance.now() };
       } else {
-        if (sc.streak >= 10) banner('Racha cortada: ' + sc.streak, -1);
         sc.streak = 0;
         p.feedback = { text: ev.p.length > 1 ? 'Acorde: sonaron ' + Math.round(value * ev.p.length) + ' de ' + ev.p.length : 'Errada', tone: 'bad', at: performance.now() };
       }
@@ -1317,7 +1314,14 @@
       } else roundRect(ctx, x - box / 2, y - box / 2, box, box, box * 0.25);
       ctx.fill(); ctx.stroke();
       ctx.shadowBlur = 0;
-      if (nt.pm) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x - box / 2 + 2, y + box * 0.22, box - 4, box * 0.16); }
+      if (nt.pm) {
+        // palm mute: an X across the box, behind the fret number
+        ctx.strokeStyle = (mk && mk.hit) || (!mk && atLine) ? 'rgba(0,0,0,0.45)' : c; ctx.globalAlpha *= 0.7;
+        ctx.lineWidth = 2; ctx.lineCap = 'round';
+        const r = box * 0.36;
+        ctx.beginPath(); ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); ctx.stroke();
+        ctx.lineCap = 'butt'; ctx.globalAlpha = mk && !mk.hit ? 0.45 : 1;
+      }
       if (nt.ac) { ctx.lineWidth = 1.5; roundRect(ctx, x - box / 2 - 4, y - box / 2 - 4, box + 8, box + 8, box * 0.3); ctx.stroke(); }
       ctx.fillStyle = (mk && mk.hit) || (!mk && atLine) ? '#111' : '#f2f2f3';
       ctx.font = '700 ' + Math.round(box * 0.5) + 'px "Space Grotesk", Inter, sans-serif';
@@ -1648,14 +1652,6 @@
       const pre = BEND_W * bendAt(nt, 0);                   // a prebend: the note is already pushed off its string
       const q = P(X + pre, Y, z);
       if (passed) {
-        if (!mk || !mk.hit) return;
-        const age = (performance.now() - mk.at) / 1000;
-        if (age > 0.5) return;
-        const q0 = P(X, Y, 0);
-        ctx.globalAlpha = 1 - age / 0.5;
-        ctx.strokeStyle = c; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(q0[0], q0[1], gemSize(q0) * (0.6 + age), 0, 7); ctx.stroke();
-        ctx.globalAlpha = 1;
         return;
       }
       const g = gemSize(q);
@@ -1682,7 +1678,12 @@
         ctx.lineWidth = Math.max(3, g * (hollow ? 0.16 : 0.26));
         ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
         ctx.shadowBlur = 0; ctx.lineCap = 'butt';
-        if (nt.pm) { ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = Math.max(1, g * 0.07); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+        if (nt.pm) {
+          const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, r = Math.max(4, g * 0.3);
+          ctx.strokeStyle = '#f4f4f6'; ctx.lineWidth = Math.max(1.5, g * 0.09); ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(mx - r, my - r * 0.7); ctx.lineTo(mx + r, my + r * 0.7); ctx.moveTo(mx + r, my - r * 0.7); ctx.lineTo(mx - r, my + r * 0.7); ctx.stroke();
+          ctx.lineCap = 'butt';
+        }
       } else {
         if (mk && mk.hit) { ctx.shadowColor = c; ctx.shadowBlur = 18; }
         // a solid gem in the string's colour, lit from above, with a bright rim
@@ -1705,7 +1706,13 @@
         ctx.stroke();
         ctx.shadowBlur = 0;
         // palm mute: a dark band across (the note sounds dampened)
-        if (nt.pm && !harmonic) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(q[0] - g * 0.6, q[1] - g * 0.07, g * 1.2, g * 0.14); }
+        // palm mute: an X across the note (play it with the side of your hand on the strings)
+        if (nt.pm && !harmonic) {
+          ctx.strokeStyle = 'rgba(10,10,14,0.7)'; ctx.lineWidth = Math.max(1.5, g * 0.1); ctx.lineCap = 'round';
+          const dx = g * 0.42, dy = g * 0.22;
+          ctx.beginPath(); ctx.moveTo(q[0] - dx, q[1] - dy); ctx.lineTo(q[0] + dx, q[1] + dy); ctx.moveTo(q[0] + dx, q[1] - dy); ctx.lineTo(q[0] - dx, q[1] + dy); ctx.stroke();
+          ctx.lineCap = 'butt';
+        }
         if (muted && g > 10) { ctx.fillStyle = '#f2f2f3'; ctx.font = '700 ' + Math.round(g * 0.5) + 'px Inter, sans-serif'; ctx.fillText('✕', q[0], q[1] + 1); }
       }
       // bend: little arrows on the note, one for a half step, two for a whole one, three for more
@@ -1753,8 +1760,8 @@
       const a = P(fMin - 0.3, hOf(str), 0), b = P(fMax + 0.3, hOf(str), 0);
       ctx.strokeStyle = colour(str); ctx.globalAlpha = 0.95;
       const ring = stringGlow(str);
-      ctx.lineWidth = Math.max(1.4, (1.2 + (n - 1 - str) * 0.3) * Math.min(1.6, a[2] * 0.012)) * (1 + ring);
-      if (ring > 0) { ctx.shadowColor = colour(str); ctx.shadowBlur = 20 * ring; }
+      ctx.lineWidth = Math.max(1.4, (1.2 + (n - 1 - str) * 0.3) * Math.min(1.6, a[2] * 0.012)) * (1 + ring * 0.4);
+      if (ring > 0) { ctx.shadowColor = colour(str); ctx.shadowBlur = 10 * ring; }
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
@@ -1780,7 +1787,7 @@
       if (str < 0 || str >= n) return null;
       const X = (nt.f | 0) === 0 ? aFret - 1 + aWidth / 2 : (nt.f | 0) - 0.5;
       const q = P(X, hOf(str), 0);
-      return [q[0], q[1], Math.max(20, q[2] * 0.62)];
+      return [q[0], q[1], Math.max(12, q[2] * 0.36)];
     }, now);
     drawBanner(ctx, w, h);
 
