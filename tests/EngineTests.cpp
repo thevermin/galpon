@@ -967,8 +967,7 @@ static void testRecordingSafety()
         t.engine.song.countIn = false;
         t.engine.record();
         int total = 0;
-        const auto start = juce::Time::getMillisecondCounter();
-        while (juce::Time::getMillisecondCounter() - start < 2600) { feedInput (t, 19, 0.3f, total); juce::Thread::sleep (100); }   // ~real time
+        for (int k = 0; k < 26; ++k) { feedInput (t, 19, 0.3f, total); juce::Thread::sleep (100); }   // ~2.6 s of audio, at about real time (the same amount on a slow computer)
         auto files = t.engine.getAudioFolder().findChildFiles (juce::File::findFiles, false, "*toma*.wav");
         CHECK (files.size() == 1, "el archivo de la toma existe mientras se graba");
         if (files.size() == 1)
