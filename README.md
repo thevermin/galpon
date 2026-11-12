@@ -7,7 +7,7 @@
 - **Windows**: baja el instalador desde [Releases](../../releases), o el último build desde [Actions](../../actions).
 - **Mac**: se compila en un par de comandos (ver [Compilar](#compilar)).
 
-Versión actual: **0.14**.
+Versión actual: **0.15**. Galpon está en español y en inglés (Configuración › General › Idioma / Language).
 
 ---
 

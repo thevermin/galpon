@@ -79,6 +79,9 @@ private:
     /** Puts (or updates, or with 0 removes) the virtual-tuning effect on a track, at `index` if new.
         Returns how many effects the track gained (+1), lost (-1) or 0. */
     bool gameRetuneOn() const;
+public:
+    std::function<void()> onLanguageChanged;   // the app rebuilds its menus
+private:
     int setRetune (int trackId, float semitones, int index = 0, const juce::var& strings = {});
     int stateVersion = 1;
     std::map<juce::String, juce::var> waveformCache;

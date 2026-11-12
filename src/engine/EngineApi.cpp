@@ -362,6 +362,7 @@ juce::var EngineApi::getAudioSetup()
     }
 
     o->setProperty ("recordOffsetMs", engine.recordOffsetMs);
+    o->setProperty ("language", engine.english() ? "en" : "es");
     o->setProperty ("metronomeLevel", engine.metronomeLevel);
     o->setProperty ("compensationMs", engine.getLatencyCompensationSamples() * 1000.0 / engine.getSampleRate());
 
@@ -801,6 +802,15 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
     //---------------------------------------------------------------- real instruments (sampler)
     if (cmd == "downloadSound") return fromResult (sounds.download (arg (args, "id").toString()));
     if (cmd == "cancelDownload") { sounds.cancel (arg (args, "id").toString()); return ok(); }
+    if (cmd == "setLanguage")
+    {
+        // { lang: "es" | "en" }: the interface's language (the menus follow it)
+        const auto l = arg (args, "lang", "").toString();
+        engine.language = l == "en" ? "en" : "es";
+        engine.saveSettings();
+        if (onLanguageChanged) onLanguageChanged();
+        return ok();
+    }
     if (cmd == "setRetune")
     {
         // { trackId, semitones }: the virtual tuning on a track (first in its chain; 0 takes it out)
@@ -1578,6 +1588,7 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
         if (auto* d = data.getDynamicObject())
         {
             d->setProperty ("stems", game.stemsInfo());
+            d->setProperty ("musicStart", game.musicStart());
             d->setProperty ("length", game.length());
             d->setProperty ("problems", problems.joinIntoString ("\n"));
         }

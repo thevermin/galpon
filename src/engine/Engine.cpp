@@ -89,6 +89,7 @@ void Engine::loadSettings()
     auto v = juce::JSON::parse (appData.getChildFile ("settings.json"));
     recordOffsetMs = (float) (double) getOrDefault (v, "recordOffsetMs", 0.0);
     metronomeLevel = (float) (double) getOrDefault (v, "metronomeLevel", 0.6);
+    language = getOrDefault (v, "language", "").toString();
 }
 
 void Engine::saveSettings() const
@@ -96,6 +97,7 @@ void Engine::saveSettings() const
     auto* o = new juce::DynamicObject();
     o->setProperty ("recordOffsetMs", recordOffsetMs);
     o->setProperty ("metronomeLevel", metronomeLevel);
+    o->setProperty ("language", language);
     appData.getChildFile ("settings.json").replaceWithText (juce::JSON::toString (juce::var (o)));
 }
 

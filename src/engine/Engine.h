@@ -35,6 +35,9 @@ public:
     int    getBlockSize() const noexcept  { return blockSize; }
     int    getLatencyCompensationSamples() const;
     float  recordOffsetMs = 0.0f;           // manual extra compensation, if the interface lies about its latency
+    juce::String language;                  // "es", "en" or empty (the system's)
+    /** The interface's language: what the user chose, or the computer's */
+    bool english() const { return language.isNotEmpty() ? language == "en" : ! juce::SystemStats::getUserLanguage().startsWithIgnoreCase ("es"); }
     float  metronomeLevel = 0.6f;
 
     /** Prepare without an audio device (tests, offline). */
@@ -257,7 +260,9 @@ private:
     int  trackLatency (const Track&) const;
     void closeOpenMidiNotes (double atBeat);
     void loadSettings();
+public:
     void saveSettings() const;
+private:
 
     juce::File appData;
     juce::AudioFormatManager audioFormats;

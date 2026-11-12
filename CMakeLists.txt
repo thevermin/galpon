@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 # Universal binary on Mac is optional; by default we build for the machine you are on.
-project(Galpon VERSION 0.14.0 LANGUAGES C CXX)
+project(Galpon VERSION 0.15.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -116,6 +116,7 @@ if (GALPON_BUILD_APP)
             ui/index.html
             ui/styles.css
             ui/bridge.js
+            ui/i18n.js
             ui/app.js
             ui/timeline.js
             ui/panels.js

@@ -60,6 +60,7 @@ MainComponent::MainComponent (Engine& e) : engine (e)
         juce::MessageManager::callAsync ([this, message] { emit ("toast", message); });
     };
     engine.onSongChanged = [this] { api.touch(); };
+    api.onLanguageChanged = [this] { menuItemsChanged(); };
     engine.plugins.onChange = [this] { api.touch(); };
 
     auto options = juce::WebBrowserComponent::Options{}
@@ -85,11 +86,13 @@ MainComponent::MainComponent (Engine& e) : engine (e)
     if (! juce::WebBrowserComponent::areOptionsSupported (options))
     {
         // WebView2 comes with Windows 10 and 11, but it can be missing or removed.
+        const bool en = engine.english();
         auto opts = juce::MessageBoxOptions::makeOptionsOkCancel (juce::MessageBoxIconType::WarningIcon,
-            "Falta Microsoft WebView2",
-            juce::String (u8"Galpon necesita el componente WebView2 de Microsoft para mostrar su pantalla. "
-                          u8"Instálalo (es gratis y tarda un minuto) y vuelve a abrir Galpon."),
-            "Descargar WebView2", "Cerrar");
+            en ? "Microsoft WebView2 is missing" : "Falta Microsoft WebView2",
+            en ? juce::String ("Galpon needs Microsoft's WebView2 component to show its screen. Install it (it's free and takes a minute) and open Galpon again.")
+               : juce::String (u8"Galpon necesita el componente WebView2 de Microsoft para mostrar su pantalla. "
+                               u8"Instálalo (es gratis y tarda un minuto) y vuelve a abrir Galpon."),
+            en ? "Download WebView2" : "Descargar WebView2", en ? "Close" : "Cerrar");
         missingWebViewBox = juce::NativeMessageBox::showScopedAsync (opts, [] (int result)
         {
             if (result == 1)
@@ -275,36 +278,39 @@ void MainComponent::choose (const juce::var& args, juce::WebBrowserComponent::Na
 //==============================================================================
 juce::StringArray MainComponent::getMenuBarNames()
 {
+    if (engine.english()) return { "File", "Edit", "Settings" };
     return { "Archivo", juce::String (u8"Edición"), juce::String (u8"Configuración") };
 }
 
 juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 {
     juce::PopupMenu m;
+    const bool en = engine.english();
+    auto L = [en] (const char* es, const char* english) { return en ? juce::String (english) : juce::String::fromUTF8 (es); };
     if (index == 0)
     {
-        m.addItem (item (juce::String (u8"Canción nueva"), newSong, juce::String (u8"⌘N")));
-        m.addItem (item (juce::String (u8"Abrir…"), openSong, juce::String (u8"⌘O")));
+        m.addItem (item (L ("Canción nueva", "New song"), newSong, juce::String (u8"⌘N")));
+        m.addItem (item (L ("Abrir…", "Open…"), openSong, juce::String (u8"⌘O")));
         m.addSeparator();
-        m.addItem (item ("Guardar", saveSong, juce::String (u8"⌘S")));
-        m.addItem (item (juce::String (u8"Guardar como…"), saveSongAs, juce::String (u8"⇧⌘S")));
+        m.addItem (item (L ("Guardar", "Save"), saveSong, juce::String (u8"⌘S")));
+        m.addItem (item (L ("Guardar como…", "Save as…"), saveSongAs, juce::String (u8"⇧⌘S")));
         m.addSeparator();
-        m.addItem (item (juce::String (u8"Importar audio…"), importAudio, juce::String (u8"⌘I")));
-        m.addItem (item (juce::String (u8"Importar MIDI…"), importMidi));
-        m.addItem (item (juce::String (u8"Exportar canción…"), exportMix, juce::String (u8"⌘E")));
+        m.addItem (item (L ("Importar audio…", "Import audio…"), importAudio, juce::String (u8"⌘I")));
+        m.addItem (item (L ("Importar MIDI…", "Import MIDI…"), importMidi));
+        m.addItem (item (L ("Exportar canción…", "Export song…"), exportMix, juce::String (u8"⌘E")));
         m.addSeparator();
-        m.addItem (item (juce::String (u8"Recuperar grabaciones…"), recoverRecordings));
-        m.addItem (item (juce::String (u8"Mostrar carpeta de la canción"), showSongFolder));
+        m.addItem (item (L ("Recuperar grabaciones…", "Recover recordings…"), recoverRecordings));
+        m.addItem (item (L ("Mostrar carpeta de la canción", "Show song folder"), showSongFolder));
     }
     else if (index == 1)
     {
-        m.addItem (item ("Deshacer", undo, juce::String (u8"⌘Z")));
-        m.addItem (item ("Rehacer", redo, juce::String (u8"⇧⌘Z")));
+        m.addItem (item (L ("Deshacer", "Undo"), undo, juce::String (u8"⌘Z")));
+        m.addItem (item (L ("Rehacer", "Redo"), redo, juce::String (u8"⇧⌘Z")));
     }
     else
     {
-        m.addItem (item (juce::String (u8"Audio y MIDI…"), audioSettings, juce::String (u8"⌘,")));
-        m.addItem (item ("Buscar plugins", scanPlugins));
+        m.addItem (item (L ("Audio y MIDI…", "Audio and MIDI…"), audioSettings, juce::String (u8"⌘,")));
+        m.addItem (item (L ("Buscar plugins", "Scan plugins"), scanPlugins));
     }
     return m;
 }

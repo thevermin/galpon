@@ -637,6 +637,7 @@ static void testGuitarGate()
     std::cout << "Puerta de ruido para guitarra\n";
     const double sr = 48000;
     auto gate = createBuiltin ("gate");
+    dynamic_cast<BuiltinProcessor*> (gate.get())->setReal ("auto", 1.0f);   // the automatic threshold
     gate->prepareToPlay (sr, 128);
     juce::Random rnd (5);
     // 5 s of an interface with hum and hiss (~ -60 dB), with a low E plucked at 2 s that dies away

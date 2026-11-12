@@ -592,3 +592,7 @@ body.in-game #app { visibility: hidden; }
 .g-classic .g-lyr-now .sung { color: #1d1d1f; }
 .g-classic .g-lyr-now .now { color: #b26b00; }
 .g-classic .g-lyr-next { color: #8a8a90; }
+
+/* the lyrics live at the top of the stage (not over the game), with room kept for them */
+.g-stage.g-with-lyrics { padding-top: 78px; }
+.g-stage > .g-lyrics { top: 8px; }

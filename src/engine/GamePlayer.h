@@ -49,6 +49,8 @@ public:
         from its guitar stem (or the whole mix if there's none). -1 if there's nothing to listen to.
         Message thread. */
     float guitarDrive (double fromSec, double toSec, bool bass) const;
+    /** Where the music really starts (seconds): songs often begin with seconds of silence */
+    double musicStart() const;
     double length() const noexcept   { return lengthSec; }
 
     /** Where the song is, in seconds, as it's heard (the stretcher's delay taken out). */

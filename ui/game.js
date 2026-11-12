@@ -614,10 +614,11 @@
       el('span.spacer'),
       el('div.g-group', null, ui.volBtn, ui.soundBtn, el('button.g-btn', { onclick: tune }, G.icon('tuner', 15), 'Afinar')));
 
-    ui.hwwrap = el('div.g-hwwrap', null, hw3, hw, ui.lyrics, sizeCtl, ui.feedback, ui.toneNow);   // the lyrics float over the top of the game
+    ui.hwwrap = el('div.g-hwwrap', null, hw3, hw, sizeCtl, ui.feedback, ui.toneNow);
     ui.fbrow = el('div.g-fbrow', null, ui.next, el('div.g-fbwrap', null, fb));
     root.replaceChildren(el('div.g-play-screen', null, head,
-      ui.stage = el('div.g-stage', null, ui.hwwrap, ui.fbrow, ui.panel),
+      // the lyrics always at the top of the stage, whatever the view (over a white tab they got lost)
+      ui.stage = el('div.g-stage', null, ui.lyrics, ui.hwwrap, ui.fbrow, ui.panel),
       foot));
     applySize();
     updateControls();
@@ -1023,9 +1024,10 @@
     if (play.ended) { play.ended = false; hideEnd(); resetScore(); updateScoreHud(); }
     if (!play.playing) {
       const pos = displayPos();
-      const first = play.items.length ? play.items[0].t : 0;
-      // No waiting through a long intro: start 3 s before the first note (the count shows 3, 2, 1)
-      if (pos < first - 3.2) { seek(Math.max(0, first - 3)); startNow(); return; }
+      // From the beginning: where the music starts (many songs open with seconds of silence), not
+      // before the first note: some songs play a long time before the guitar comes in
+      const start = Math.max(0, (play.data.musicStart || 0) - 0.25);
+      if (pos < start - 0.1) { seek(start); startNow(); return; }
       // Coming back from a pause: back up a little and count 3, 2, 1 so you can get ready
       if (pos > 0.5 && pos < play.length - 0.5) {
         seek(Math.max(0, pos - 1.5));
@@ -1961,7 +1963,9 @@
   let lyricKey = null;
   function drawLyrics(now) {
     const p = play;
-    if (!opts.lyrics || !p.lyrics.length) { if (lyricKey !== 'off') { lyricKey = 'off'; ui.lyrics.replaceChildren(); ui.lyrics.classList.add('empty'); } return; }
+    const show = opts.lyrics && p.lyrics.length > 0;
+    if (ui.stage) ui.stage.classList.toggle('g-with-lyrics', show);   // room for them above the game
+    if (!show) { if (lyricKey !== 'off') { lyricKey = 'off'; ui.lyrics.replaceChildren(); ui.lyrics.classList.add('empty'); } return; }
     let li = -1;
     for (let k = 0; k < p.lyrics.length; k++) { if (p.lyrics[k].t - 1.2 <= now) li = k; else break; }
     let line = li >= 0 ? p.lyrics[li] : null;
@@ -2109,7 +2113,7 @@
       }
     } else body.push(el('p.note', { text: p.guitar ? 'No te escuché tocar: fíjate que la barrita de «Tu sonido» se mueva cuando tocas.' : 'Para darte puntos, elige tu guitarra en «Tu sonido».' }));
     body.push(el('div.row', null,
-      el('button.btn.primary', { onclick: () => { hideEnd(); resetScore(); updateScoreHud(); seek(0); G.call('gamePlay'); play.playing = true; updateControls(); } }, 'Otra vez'),
+      el('button.btn.primary', { onclick: () => { hideEnd(); resetScore(); updateScoreHud(); seek(Math.max(0, (play.data.musicStart || 0) - 0.25)); G.call('gamePlay'); play.playing = true; updateControls(); } }, 'Otra vez'),
       worst >= 0 ? el('button.btn', { onclick: () => { hideEnd(); loopSection(worst); if (play.speed > 0.8) { play.speed = 0.8; ui.speed.value = 0.8; G.call('gameSpeed', { speed: 0.8 }); } G.call('gamePlay'); play.playing = true; updateControls(); } },
         'Practicar ' + sectionName(play.sections[worst])) : null,
       el('button.btn', { onclick: closeSong }, 'Elegir otra canción')));

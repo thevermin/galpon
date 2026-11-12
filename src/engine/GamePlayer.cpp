@@ -283,6 +283,26 @@ void GamePlayer::render (juce::AudioBuffer<float>& out, int len)
     }
 }
 
+double GamePlayer::musicStart() const
+{
+    double first = -1.0;
+    for (auto& st : stems)
+    {
+        const auto& buf = st->original != nullptr ? *st->original : st->audio;
+        const double rate = st->original != nullptr ? st->originalRate : st->audioRate;
+        if (buf.getNumSamples() == 0 || rate <= 0) continue;
+        const int win = (int) (rate * 0.01);
+        const float threshold = 0.004f;           // ~ -48 dBFS: something you hear
+        for (int i = 0; i + win <= buf.getNumSamples(); i += win)
+        {
+            float peak = 0;
+            for (int ch = 0; ch < buf.getNumChannels(); ++ch) peak = juce::jmax (peak, buf.getMagnitude (ch, i, win));
+            if (peak > threshold) { const double t = i / rate; if (first < 0 || t < first) first = t; break; }
+        }
+    }
+    return juce::jmax (0.0, first);
+}
+
 float GamePlayer::guitarDrive (double fromSec, double toSec, bool bass) const
 {
     // the guitar (or bass) stem; the full mix only as a last resort

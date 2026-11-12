@@ -134,7 +134,7 @@ namespace
         {
             addParam ("threshold", "Umbral", -90.0f, -10.0f, -55.0f, "dB");
             addParam ("release", juce::String (u8"Liberación"), 10.0f, 500.0f, 80.0f, "ms", 80.0f);
-            addParam ("auto", juce::String (u8"Automático"), 0.0f, 1.0f, 1.0f);
+            addParam ("auto", juce::String (u8"Automático"), 0.0f, 1.0f, 0.49f);   // what players leave it at: fully automatic cut too much
         }
 
         void prepareToPlay (double sr, int) override

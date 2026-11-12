@@ -914,7 +914,12 @@
           const opt = (v, label, hint) => el('label.radio', null,
             el('input', { type: 'radio', name: 'names', checked: G.namesEs() === (v === 'es'), onchange: () => { G.setNames(v); A.refresh(); if (G.Timeline) G.Timeline.render(); draw(); } }),
             el('span', null, el('b', { text: label }), el('small', { text: hint })));
-          body.append(el('b', { text: 'Nombres de las notas y los acordes' }),
+          // the language: written in both, so whoever reads it can find their own
+          body.append(el('b', { text: 'Idioma / Language', 'data-notr': '' }),
+            el('div.radios', null, ...[['es', 'Español'], ['en', 'English']].map(([v, label]) => el('label.radio', { 'data-notr': '' },
+              el('input', { type: 'radio', name: 'lang', checked: (G.lang || 'es') === v, onchange: () => { if (G.setLang) G.setLang(v); } }),
+              el('span', null, el('b', { text: label }))))),
+            el('b', { text: 'Nombres de las notas y los acordes' }),
             el('div.radios', null,
               opt('en', 'C D E F G A B (inglés)', 'Am, G7, F#m… Como en la mayoría de las tablaturas y en Rocksmith.'),
               opt('es', 'Do Re Mi Fa Sol La Si', 'Lam, Sol7, Fa#m…')),
