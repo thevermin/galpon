@@ -2145,7 +2145,36 @@ static std::vector<NoteScorer::Judgment> runScorer (const std::vector<float>& au
         if ((i / 256) % 8 == 0) sc.processNow();
     }
     for (int k = 0; k < 4; ++k) sc.processNow();
-    return sc.take();
+    auto js = sc.take();
+    // hits can be reported before an earlier miss: in song order for the checks
+    std::stable_sort (js.begin(), js.end(), [] (const NoteScorer::Judgment& a, const NoteScorer::Judgment& b) { return a.index != b.index ? a.index < b.index : a.kind < b.kind; });
+    return js;
+}
+
+/** How long after each note its hit is reported (seconds of audio), feeding the audio in real-time-sized blocks */
+static std::vector<double> scorerDelays (const std::vector<float>& audio, std::vector<NoteScorer::Event> events)
+{
+    const double sr = 48000;
+    NoteScorer sc;
+    sc.setManual (true);
+    sc.prepare (sr);
+    std::vector<float> silence (256, 0.0f);
+    sc.push (silence.data(), 256, -256 / sr, 1 / sr, true);
+    std::vector<double> times;
+    for (auto& e : events) times.push_back (e.t);
+    sc.setEvents (std::move (events), 0);
+    sc.processNow();
+    std::vector<double> delay (times.size(), -1.0);
+    double t = 0;
+    for (size_t i = 0; i < audio.size(); i += 256)
+    {
+        const int n = (int) std::min<size_t> (256, audio.size() - i);
+        sc.push (audio.data() + i, n, t, 1 / sr, true);
+        t += n / sr;
+        sc.processNow();                     // the real thread looks every ~12 ms; here every 5 ms
+        for (auto& j : sc.take()) if (j.kind == 0 && j.hit && delay[(size_t) j.index] < 0) delay[(size_t) j.index] = t - times[(size_t) j.index];
+    }
+    return delay;
 }
 
 static void testNoteDetection()
@@ -2168,6 +2197,19 @@ static void testNoteDetection()
         for (auto& j : js) if (j.hit) { ++hits; worst = std::max (worst, std::abs (j.timingMs)); }
         CHECK (js.size() == notes.size() && hits == (int) notes.size(), "notas correctas: las reconoce (" << hits << " de " << notes.size() << ")");
         CHECK (worst < 12.0f, "y a tiempo (error máximo " << worst << " ms)");
+    }
+    // how fast a hit shows up (it used to wait for the whole window: ~0.4 s)
+    {
+        const std::vector<int> notes { 40, 45, 50, 55, 59, 64, 69, 76 };
+        auto a = blank (notes.size() * 0.6 + 1.5);
+        std::vector<NoteScorer::Event> es;
+        for (size_t i = 0; i < notes.size(); ++i) { pluck (a, sr, 0.5 + i * 0.6, notes[i], 0.55); es.push_back (ev (0.5 + i * 0.6, { notes[i] })); }
+        auto d = scorerDelays (a, es);
+        double worstLow = 0, worstRest = 0;
+        for (size_t i = 0; i < d.size(); ++i) (notes[i] < 43 ? worstLow : worstRest) = std::max (notes[i] < 43 ? worstLow : worstRest, d[i] < 0 ? 9.0 : d[i]);
+        std::cout << "    acierto marcado a los " << juce::String (worstRest * 1000, 0) << " ms (graves: " << juce::String (worstLow * 1000, 0) << " ms)\n";
+        CHECK (worstRest < 0.15, "un acierto se marca enseguida (" << juce::String (worstRest * 1000, 0) << " ms después de la nota)");
+        CHECK (worstLow < 0.25, "también en las cuerdas más graves (" << juce::String (worstLow * 1000, 0) << " ms)");
     }
     // late and early
     {

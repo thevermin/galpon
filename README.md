@@ -57,6 +57,7 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 - El orden de las cuerdas se puede poner como tablatura o con la grave arriba. El tamaño se ajusta con − y +.
 - Muestra acordes, notas largas, bends, slides, ligados, palm mute, armónicos, vibrato, partes de la canción, letra y un diapasón con la posición de la mano.
 - **Ves lo que tocaste, como en Rocksmith**: cada nota que aciertas da un destello breve en el color de su cuerda; las notas largas que mantienes bien echan algunas chispas; las que erras se apagan y marcan una ✕ chica. Las rachas largas aparecen a un costado («¡25 seguidas!»). Las notas con palm mute llevan una X.
+- **Marca los aciertos al instante**: en cuanto oye la nota (~0,1 s; en las cuerdas más graves ~0,2 s), sin esperar a que termine su margen de tiempo.
 - **Te escucha y te da puntos**: reconoce las notas y acordes que tocas, si llegaste a tiempo y si mantuviste las notas largas. Lleva racha, multiplicador y precisión. Al final ves un resumen por parte y puedes practicar la parte que más te costó.
 - **Práctica**: más despacio sin cambiar el tono (30–100 %), repetir A–B o una parte entera.
 - **Volumen** del Master, de cada instrumento de la canción y de tu guitarra. Hay un atajo para bajar o quitar la guitarra (o el bajo) de la grabación y escucharte mejor, y puedes elegir cuánto baja la canción cuando tocas fuerte.

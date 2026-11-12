@@ -659,7 +659,9 @@
           const idx = Math.floor(sample / total * peaks.length);
           if (idx < 0 || idx >= peaks.length) continue;
           const v = peaks[idx] * Math.pow(10, (c.gainDb || 0) / 20);
-          const a = Math.min(mid, v * mid * 1.6);
+          // the same scale as while recording (square root: closer to how loud it sounds). In a straight
+          // line a guitar plugged straight into the interface (peaks around -20 dB) looked almost empty
+          const a = Math.min(mid, Math.sqrt(v) * mid);
           g.fillRect(x, mid - a, 1, Math.max(1, a * 2));
         }
       };

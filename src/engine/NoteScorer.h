@@ -67,7 +67,9 @@ public:
 private:
     void run() override;
     void work();
-    void judge (const Event& e, int index);
+    /** Judges a note with the audio up to `iEnd`. `final`: its time window is over (a miss can be
+        decided). Otherwise only a hit is reported, as soon as it's certain. Returns whether it decided. */
+    bool judge (const Event& e, int index, juce::int64 iEnd, bool final);
     void judgeSustain (int index);
 
     // ring of input samples and the song time of each
@@ -90,6 +92,7 @@ private:
     std::vector<Event> events;
     double freqScale = 1.0;
     int next = 0, pass = 0, seenJumps = 0;
+    std::vector<char> done;          // events already judged (hits can come before earlier misses)
     juce::int64 validFrom = 0;
     struct PendingSustain { int index; double from, to; std::vector<int> pitches; };
     std::vector<PendingSustain> pendingSustains;
@@ -102,7 +105,7 @@ private:
     void spectrum (juce::int64 start, int len, std::vector<float>& mag);
     float harmonicSum (const std::vector<float>& mag, int fftSize, float f0) const;
     int countHeard (const std::vector<float>& mag, int fftSize, const std::vector<int>& pitches, float need) const;
-    std::unique_ptr<juce::dsp::FFT> fft1k, fft8k, fft16k;
+    std::unique_ptr<juce::dsp::FFT> fft1k, fft4k, fft8k, fft16k;
     std::vector<float> work1, work2;
 };
 

@@ -18,6 +18,7 @@ NoteScorer::NoteScorer() : juce::Thread ("Galpon detector de notas")
     ring.assign ((size_t) ringSize, 0.0f);
     times.assign ((size_t) ringSize, 0.0);
     fft1k = std::make_unique<juce::dsp::FFT> (10);
+    fft4k = std::make_unique<juce::dsp::FFT> (12);
     fft8k = std::make_unique<juce::dsp::FFT> (13);
     fft16k = std::make_unique<juce::dsp::FFT> (14);
 }
@@ -124,21 +125,32 @@ void NoteScorer::work()
         const double t0 = validFrom < w ? times[(size_t) (validFrom & (ringSize - 1))] : 1.0e12;
         next = (int) (std::lower_bound (events.begin(), events.end(), t0 + 0.02,
                                         [] (const Event& e, double t) { return e.t < t; }) - events.begin());
+        done.assign (events.size(), 0);
+        for (int k = 0; k < next; ++k) done[(size_t) k] = 1;
     }
     if (! enabled.load() || w <= validFrom + 2) return;
 
     const double speed = std::max (0.1, lastStep.load() * sampleRate);
+    if (done.size() != events.size()) done.assign (events.size(), 0);
 
-    while (next < (int) events.size())
+    // A hit is reported as soon as the attack and enough of the note have been heard (~0.1 s), not
+    // when the note's whole time window is over: that made every hit show up almost half a second late.
+    // A miss can only be decided when the window is over.
+    while (next < (int) events.size() && done[(size_t) next]) ++next;
+    for (int k = next; k < (int) events.size(); ++k)
     {
-        const auto& e = events[(size_t) next];
+        if (done[(size_t) k]) continue;
+        const auto& e = events[(size_t) k];
         const auto iEnd = indexForTime (e.t + late * speed);
-        if (iEnd < 0) break;
-        const int frame = 8192 + (int) (0.06 * sampleRate);
-        if (w - iEnd < frame) break;
-        judge (e, next);
-        ++next;
+        if (iEnd >= 0)
+        {
+            if (judge (e, k, iEnd, true)) done[(size_t) k] = 1;
+            continue;
+        }
+        if (indexForTime (e.t - early * speed) < 0) break;     // this one (and the rest) haven't started
+        if (judge (e, k, w - envBlock * 7, false)) done[(size_t) k] = 1;
     }
+    while (next < (int) events.size() && done[(size_t) next]) ++next;
     for (size_t k = 0; k < pendingSustains.size();)
     {
         const auto i = indexForTime (pendingSustains[k].to);
@@ -150,7 +162,8 @@ void NoteScorer::work()
 void NoteScorer::spectrum (juce::int64 start, int len, std::vector<float>& mag)
 {
     const int fftSize = len * 2;
-    auto& f = len <= 512 ? *fft1k : (len <= 4096 ? *fft8k : *fft16k);
+    // the FFT is twice the window (zero-padded); each size has its own
+    auto& f = len <= 512 ? *fft1k : len <= 2048 ? *fft4k : len <= 4096 ? *fft8k : *fft16k;
     work1.assign ((size_t) fftSize * 2, 0.0f);
     for (int i = 0; i < len; ++i)
     {
@@ -219,14 +232,13 @@ int NoteScorer::countHeard (const std::vector<float>& mag, int fftSize, const st
     return heard;
 }
 
-void NoteScorer::judge (const Event& e, int index)
+bool NoteScorer::judge (const Event& e, int index, juce::int64 iEnd, bool final)
 {
     Judgment j;
     j.index = index;
     j.pass = pass;
     const double speed = std::max (0.1, lastStep.load() * sampleRate);
     auto iStart = indexForTime (e.t - early * speed);
-    const auto iEnd = indexForTime (e.t + late * speed);
     const auto lo = std::max<juce::int64> (validFrom, written.load() - ringSize + 1);
     if (iStart < 0) iStart = lo;
     iStart = std::max (iStart, lo);
@@ -272,10 +284,14 @@ void NoteScorer::judge (const Event& e, int index)
     // --- pitch: does the expected harmonic pattern stand out from every other note's?
     int lowest = 128;
     for (auto p : e.pitches) lowest = std::min (lowest, p);
-    const int len = midiToHz (lowest, freqScale) < 100.0f ? 8192 : 4096;
-    auto pitchAt = (onset >= 0 ? onset : indexForTime (e.t)) + (juce::int64) (0.04 * sampleRate);
+    const float lowHz = midiToHz (lowest, freqScale);
+    const int len = lowHz < 100.0f ? 8192 : lowHz < 190.0f ? 4096 : 2048;   // as short as the note allows: it decides how soon a hit shows up
+    if (! final && onset < 0 && ! e.legato) return false;    // no attack yet
+    const auto noteAt = onset >= 0 ? onset : indexForTime (e.t);
+    if (noteAt < 0) return false;
+    auto pitchAt = noteAt + (juce::int64) (0.03 * sampleRate);
     pitchAt = std::max (pitchAt, lo);
-    pitchAt = std::min (pitchAt, written.load() - len);
+    if (pitchAt + len > written.load()) return false;         // not enough of the note heard yet
     int heard = 0;
     float frameRms = 0;
     for (int i = 0; i < len; ++i) { const float x = ring[(size_t) ((pitchAt + i) & (ringSize - 1))]; frameRms += x * x; }
@@ -299,12 +315,14 @@ void NoteScorer::judge (const Event& e, int index)
     j.value = e.muted ? (onset >= 0 ? 1.0f : 0.0f) : (float) heard / (float) total;
     if (j.hit && onset >= 0)
         j.timingMs = (float) ((times[(size_t) (onset & (ringSize - 1))] - e.t) / speed * 1000.0);
+    if (! final && ! j.hit) return false;                     // maybe later in its window
     {
         const juce::ScopedLock sl (outLock);
         out.push_back (j);
     }
     if (j.hit && e.sus >= 0.35 * speed && ! e.muted)
         pendingSustains.push_back ({ index, e.t + 0.15 * speed, e.t + e.sus - 0.05 * speed, e.pitches });
+    return true;
 }
 
 void NoteScorer::judgeSustain (int k)
