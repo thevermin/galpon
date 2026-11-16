@@ -126,7 +126,10 @@ public:
     static juce::Result encodeM4a (const juce::File& wav, const juce::File& m4a, int kbps = 256);
 
     /** Renders part of the song to a buffer (only the tracks `include` accepts). */
-    juce::AudioBuffer<float> renderRange (double startBeat, double endBeat, const std::function<bool (const Track&)>& include = {});
+    /** Renders the track's instrument and effects (before volume and pan) to an audio file that plays
+        instead of them. Off: back to the live instrument. */
+    juce::Result freezeTrack (int trackId, bool on);
+        juce::AudioBuffer<float> renderRange (double startBeat, double endBeat, const std::function<bool (const Track&)>& include = {});
 
     /** Chord ID: finds the chords of a region (or of the whole song when clipId is 0)
         and puts them on the chord track. */
@@ -192,8 +195,12 @@ public:
     std::function<void()> onSongChanged;   // e.g. after recording finished
     std::function<void (const juce::String&)> onStatus;
 
-    double beatsToSamples (double beats) const noexcept { return beats * 60.0 / song.bpm * sampleRate; }
-    double samplesToBeats (double samples) const noexcept { return samples / sampleRate * song.bpm / 60.0; }
+    // Positions (from the start of the song), through the tempo changes
+    double beatsToSamples (double beats) const noexcept { return song.secondsAt (beats) * sampleRate; }
+    double samplesToBeats (double samples) const noexcept { return song.beatAtSeconds (samples / sampleRate); }
+    // Lengths: how many samples `beats` last starting at `fromBeat`, and the other way round
+    double samplesFor (double fromBeat, double beats) const noexcept { return beatsToSamples (fromBeat + beats) - beatsToSamples (fromBeat); }
+    double beatsFor (double fromBeat, double samples) const noexcept { return samplesToBeats (beatsToSamples (fromBeat) + samples) - fromBeat; }
 
     juce::File getAudioFolder() const { return songFolder.getChildFile ("Audio"); }
     std::shared_ptr<const juce::AudioBuffer<float>> loadAudio (const juce::String& fileName);
@@ -267,6 +274,8 @@ private:
     juce::File appData;
     juce::AudioFormatManager audioFormats;
     std::atomic<bool> offlineBusy { false };
+    int freezeCaptureId = 0;                          // while freezing: the track being captured
+    juce::AudioBuffer<float>* freezeCapture = nullptr;
     double sampleRate = 48000.0;
     int    blockSize  = 512;
     bool   offline    = false;

@@ -96,8 +96,10 @@
 
   function renderTopbar() {
     const s = G.state.song;
-    $('#lcd-bpm b').textContent = Math.round(s.bpm * 10) / 10;
-    $('#lcd-sig b').textContent = `${s.sigNum}/${s.sigDen}`;
+    const here = Math.max(0, G.tick ? G.tick.beat : 0);
+    $('#lcd-bpm b').textContent = lcdShown.bpm = Math.round(T.bpmAt(here) * 10) / 10;
+    const m = T.meterAt(here);
+    $('#lcd-sig b').textContent = lcdShown.sig = `${m.num}/${m.den}`;
     $('#lcd-key b').textContent = KEY_ES[Math.max(0, KEYS.indexOf(s.key))] + (G.namesEs() ? (s.minor ? ' men' : ' may') : (s.minor ? 'm' : ''));
     $('#btn-cycle').classList.toggle('on', s.cycle);
     $('#btn-metro').classList.toggle('on', s.metronome);
@@ -113,12 +115,19 @@
     document.title = s.name + ' — Galpon';
   }
 
+  const lcdShown = {};
   function onTick(t) {
     G.tick = t;
-    const bpb = T.bpb();
     const beat = Math.max(0, t.beat);
-    const bar = Math.floor(beat / bpb) + 1, b = Math.floor(beat % bpb) + 1;
-    $('#lcd-pos b').textContent = t.countIn ? 'cuenta' : `${bar} . ${b}`;
+    const pos = T.barOf(beat);
+    $('#lcd-pos b').textContent = t.countIn ? 'cuenta' : `${pos.bar} . ${Math.floor(pos.beat + 1e-6) + 1}`;
+    if (G.state && ((G.state.song.tempoChanges || []).length || (G.state.song.meterChanges || []).length)) {
+      // the tempo and meter that are sounding right now
+      const bpm = Math.round(T.bpmAt(beat) * 10) / 10, m = T.meterAt(beat);
+      if (lcdShown.bpm !== bpm) { lcdShown.bpm = bpm; $('#lcd-bpm b').textContent = bpm; }
+      const sig = `${m.num}/${m.den}`;
+      if (lcdShown.sig !== sig) { lcdShown.sig = sig; $('#lcd-sig b').textContent = sig; }
+    }
     $('#lcd').classList.toggle('counting', !!t.countIn);
     if (t.playing !== lastPlaying) {
       // only touch the button when it changes: replacing it 30 times a second ate the clicks
@@ -244,16 +253,33 @@
     $('#btn-export').onclick = () => A.exportSong();
     $('#btn-settings').onclick = () => A.openSettings('audio');
     $('#btn-add-track').onclick = () => A.newTrackDialog();
+    $('#btn-video').onclick = () => G.call('showVideo', { on: true });
     $('#btn-empty-add').onclick = () => A.newTrackDialog();
     $('#master-vol').addEventListener('input', G.throttle((e) => { G.state.song.masterDb = +e.target.value; G.call('setSong', { masterDb: G.state.song.masterDb }); }, 40));
     $('#master-vol').addEventListener('dblclick', (e) => { e.target.value = 0; G.call('setSong', { masterDb: 0 }); });
 
-    $('#lcd-bpm').onclick = async () => {
+    const hasTempoMap = () => (G.state.song.tempoChanges || []).length > 0;
+    $('#lcd-bpm').onclick = async (e) => {
+      if (hasTempoMap()) {
+        // with tempo changes: change the one that's sounding, or add one here
+        const here = Math.max(0, G.tick ? G.tick.beat : 0);
+        const list = G.state.song.tempoChanges.filter((t) => t.beat <= here + 1e-6);
+        const from = list.length ? list[list.length - 1].beat : 0;
+        return G.menu(e.clientX, e.clientY + 8, [
+          { label: from > 0 ? `Cambiar el tempo del compás ${T.barOf(from).bar}…` : 'Cambiar el tempo del principio…', action: () => T.askTempoChange(from) },
+          { label: `Cambiar el tempo desde el compás ${T.barOf(here).bar}…`, action: () => T.askTempoChange(T.barFloor(here)) },
+          '-',
+          { label: 'Quitar todos los cambios de tempo', danger: true, action: async () => { for (const t of G.state.song.tempoChanges.slice()) await G.call('setTempoChange', { beat: t.beat, bpm: 0 }); await A.refresh(); } },
+        ]);
+      }
       const v = await G.prompt('Tempo (pulsos por minuto)', String(G.state.song.bpm));
       if (v && !isNaN(parseFloat(v))) { await G.run('setSong', { bpm: parseFloat(v) }); await A.refresh(); G.Panels.offerFollowTempo(); }
     };
-    $('#lcd-sig').onclick = (e) => G.menu(e.clientX, e.clientY, [[4, 4], [3, 4], [2, 4], [6, 8], [5, 4], [7, 8], [12, 8]]
-      .map(([n, d]) => ({ label: `${n}/${d}`, action: () => G.run('setSong', { sigNum: n, sigDen: d }) })));
+    $('#lcd-sig').onclick = (e) => {
+      const here = Math.max(0, G.tick ? G.tick.beat : 0);
+      const m = T.meterAt(here);
+      T.askMeterChange(m.beat, e.clientX, e.clientY + 8);
+    };
     $('#lcd-key').onclick = (e) => {
       const items = KEYS.map((k, i) => ({ label: KEY_ES[i] + ' mayor', action: () => G.run('setSong', { key: k, minor: false }) }));
       items.push('-');
@@ -261,8 +287,8 @@
       G.menu(e.clientX, 60, items);
     };
     $('#lcd-pos').onclick = async () => {
-      const v = await G.prompt('Ir al compás', String(Math.floor(Math.max(0, G.tick ? G.tick.beat : 0) / T.bpb()) + 1));
-      if (v && !isNaN(parseInt(v, 10))) G.call('setPosition', { beat: (parseInt(v, 10) - 1) * T.bpb() });
+      const v = await G.prompt('Ir al compás', String(T.barOf(Math.max(0, G.tick ? G.tick.beat : 0)).bar));
+      if (v && !isNaN(parseInt(v, 10))) G.call('setPosition', { beat: T.beatOfBar(Math.max(1, parseInt(v, 10))) });
     };
   }
 
@@ -455,7 +481,7 @@
       const item = el('div.lib-item', { draggable: 'true', style: { background: '#232326', cursor: 'grab' }, title: 'Arrástralo a una pista, o haz clic en + para agregarlo en el cursor' },
         el('span', null, el('b', { text: l.name, style: { display: 'block', fontSize: '12px' } }), el('small', { text: `${l.category} · ${l.length / T.bpb()} compases · sigue el tono` })),
         el('button.icon-btn', { 'aria-label': 'Agregar en el cursor', onclick: () => {
-          const beat = Math.floor((G.tick ? Math.max(0, G.tick.beat) : 0) / T.bpb()) * T.bpb();
+          const beat = T.barFloor(G.tick ? Math.max(0, G.tick.beat) : 0);
           G.run('addLoop', { loopId: l.id, beat });
         } }, G.icon('plus', 14)));
       item.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/galpon-loop', l.id); e.dataTransfer.effectAllowed = 'copy'; });
@@ -545,6 +571,7 @@
       { kind: 'instrument', preset: 'Batería acústica', tag: 'PAD', color: '#60A5FA', name: 'Batería para tocar', desc: 'Toca los ritmos tú mismo' },
       { kind: 'bus', preset: 'reverb', tag: 'FX', color: '#94A3B8', name: 'Bus de efectos', desc: 'Una reverb o un delay compartidos: le mandas sonido desde varias pistas' },
       { kind: 'import', tag: '↓', color: '#A1A1A8', name: 'Importar', desc: 'Audio (WAV, AIFF, FLAC, MP3, M4A) o MIDI' },
+      { kind: 'video', tag: '▶', color: '#F59E0B', name: 'Video', desc: 'Una película o un clip para musicalizar: se ve junto con la canción' },
     ];
     G.modal('¿Qué quieres agregar?', (body, close) => {
       const cards = el('div.cards');
@@ -552,6 +579,7 @@
         onclick: async () => {
           close();
           if (k.kind === 'import') return A.importAny();
+          if (k.kind === 'video') return T.chooseVideo();
           const id = await G.run('addTrack', { kind: k.kind, preset: k.preset || '' });
           if (!id) return;
           await A.refresh();

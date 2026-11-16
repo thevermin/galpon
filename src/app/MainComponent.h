@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_extra/juce_gui_extra.h>
+#include <juce_video/juce_video.h>
 #include "engine/Engine.h"
 #include "engine/EngineApi.h"
 #include "PluginWindows.h"
@@ -45,6 +46,13 @@ private:
     std::unique_ptr<juce::WebBrowserComponent> browser;
     juce::File devUiFolder;
     juce::ScopedMessageBox missingWebViewBox;
+
+    // Video track: a window with the movie, following the playhead
+    void syncVideo();
+    void showVideo (bool show);
+    std::unique_ptr<juce::DocumentWindow> videoWindow;
+    juce::String loadedVideo;
+    double lastVideoSeek = -1.0;
 };
 
 } // namespace galpon

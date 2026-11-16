@@ -782,6 +782,122 @@ static void testTunerPitch()
     CHECK (detectPitch (silence.data(), 4096, sr, lv) == 0.0, "en silencio no inventa notas");
 }
 
+static void testTempoAndMeterChanges()
+{
+    std::cout << "Cambios de tempo y de compás\n";
+    Song s;
+    s.bpm = 120;
+    s.tempoChanges = { { 8.0, 60.0 } };           // 2 bars at 120, then at 60
+    CHECK (std::abs (s.secondsAt (8.0) - 4.0) < 1e-9, "8 pulsos a 120 son 4 s");
+    CHECK (std::abs (s.secondsAt (10.0) - 6.0) < 1e-9, "2 pulsos más a 60 son 2 s más");
+    CHECK (std::abs (s.beatAtSeconds (6.0) - 10.0) < 1e-9 && std::abs (s.beatAtSeconds (3.0) - 6.0) < 1e-9, "y al revés");
+    CHECK (s.bpmAt (7.9) == 120.0 && s.bpmAt (8.0) == 60.0, "el tempo en cada lugar");
+    CHECK (std::abs (s.secondsAt (-4.0) + 2.0) < 1e-9, "antes del principio (la cuenta) al primer tempo");
+
+    s.meterChanges = { { 8.0, 3, 4 } };          // 2 bars of 4/4, then 3/4
+    CHECK (s.barStartAtOrBefore (9.0) == 8.0 && s.barStartAtOrBefore (11.5) == 11.0 && s.barStartAtOrBefore (7.0) == 4.0, "los compases de 3/4 empiezan cada 3 pulsos");
+    CHECK (s.beatsPerBarAt (12.0) == 3.0 && s.beatsPerBarAt (2.0) == 4.0, "el largo del compás en cada lugar");
+
+    TestEngine t;
+    auto* a = t.engine.addTrack (TrackKind::Audio);
+    juce::ignoreUnused (a);
+    t.engine.setPositionBeats (12.0);
+    t.api.call ("setTempoChange", juce::JSON::parse ("{\"beat\":8,\"bpm\":90}"));
+    CHECK (std::abs (t.engine.getPositionBeats() - 12.0) < 1e-6, "cambiar el tempo deja el cursor en el mismo pulso");
+    CHECK (t.engine.song.tempoChanges.size() == 1 && t.engine.song.tempoChanges[0].bpm == 90.0, "queda el cambio de tempo");
+    t.api.call ("setMeterChange", juce::JSON::parse ("{\"beat\":9.5,\"num\":6,\"den\":8}"));
+    CHECK (t.engine.song.meterChanges.size() == 1 && t.engine.song.meterChanges[0].beat == 8.0, "un cambio de compás va al principio del compás (" << (t.engine.song.meterChanges.empty() ? -1.0 : t.engine.song.meterChanges[0].beat) << ")");
+    CHECK (t.engine.saveSong().wasOk() && t.engine.loadSong (t.engine.songFolder).wasOk()
+           && t.engine.song.tempoChanges.size() == 1 && t.engine.song.meterChanges.size() == 1 && t.engine.song.meterChanges[0].num == 6,
+           "se guardan con la canción");
+    t.api.call ("setTempoChange", juce::JSON::parse ("{\"beat\":8,\"bpm\":0}"));
+    CHECK (t.engine.song.tempoChanges.empty(), "se pueden borrar");
+    t.api.call ("undo", juce::var());
+    CHECK (t.engine.song.tempoChanges.size() == 1, "y deshacer los vuelve a poner");
+    t.api.call ("setTempoChange", juce::JSON::parse ("{\"beat\":0,\"bpm\":100}"));
+    CHECK (t.engine.song.bpm == 100.0 && t.engine.song.tempoChanges.size() == 1, "en el pulso 0 cambia el tempo de la canción");
+}
+
+static void testArrangement()
+{
+    std::cout << "Arreglo por partes (mover, duplicar, borrar en todas las pistas)\n";
+    TestEngine t;
+    auto* inst = t.engine.addTrack (TrackKind::Instrument);
+    auto* other = t.engine.addTrack (TrackKind::Instrument);
+    auto midiClip = [&] (Track* tr, double start, double len, int pitch)
+    {
+        Clip c; c.id = t.engine.song.newId(); c.midi = true; c.start = start; c.length = len; c.loopLength = len;
+        c.notes.push_back ({ 0.0, 1.0, pitch, 0.8f });
+        tr->clips.push_back (c);
+    };
+    midiClip (inst, 0, 8, 60);      // A: bars 1-2
+    midiClip (inst, 8, 8, 62);      // B: bars 3-4
+    midiClip (other, 4, 8, 70);     // crosses the A/B edge
+    t.engine.song.sections = { { 0, 8, "verse" }, { 8, 8, "chorus" } };
+
+    auto starts = [&] (Track* tr) { std::vector<double> v; for (auto& c : tr->clips) v.push_back (c.start); std::sort (v.begin(), v.end()); return v; };
+    t.api.call ("arrangeSection", juce::JSON::parse ("{\"beat\":8,\"length\":8,\"op\":\"duplicate\"}"));
+    CHECK ((starts (inst) == std::vector<double> { 0, 8, 16 }), "duplicar el estribillo lo pone justo después");
+    CHECK (other->clips.size() == 3, "la región que cruzaba el borde se corta y su parte se copia (" << other->clips.size() << ")");
+    CHECK (t.engine.song.sections.size() == 3 && t.engine.song.sections[2].kind == "chorus" && t.engine.song.sections[2].beat == 16.0, "la parte también se duplica");
+
+    t.api.call ("arrangeSection", juce::JSON::parse ("{\"beat\":0,\"length\":8,\"op\":\"move\",\"to\":24}"));
+    CHECK ((starts (inst) == std::vector<double> { 0, 8, 16 }), "mover la estrofa al final corre lo demás");
+    CHECK (t.engine.song.sections[2].kind == "verse" && t.engine.song.sections[0].kind == "chorus", "y la estrofa queda al final");
+    bool lastIsVerse = false;
+    for (auto& c : inst->clips) if (c.start == 16.0) lastIsVerse = ! c.notes.empty() && c.notes[0].pitch == 60;
+    CHECK (lastIsVerse, "con sus notas");
+
+    t.api.call ("arrangeSection", juce::JSON::parse ("{\"beat\":8,\"length\":8,\"op\":\"delete\"}"));
+    CHECK ((starts (inst) == std::vector<double> { 0, 8 }) && t.engine.song.sections.size() == 2, "borrar una parte cierra el hueco");
+    t.api.call ("undo", juce::var());
+    CHECK (starts (inst).size() == 3, "y se puede deshacer");
+}
+
+static void testStacksAndFreeze()
+{
+    std::cout << "Carpetas de pistas y congelar\n";
+    TestEngine t;
+    auto* inst = t.engine.addTrack (TrackKind::Instrument);
+    auto* other = t.engine.addTrack (TrackKind::Instrument);
+    Clip c; c.id = t.engine.song.newId(); c.midi = true; c.start = 0; c.length = 8; c.loopLength = 8;
+    for (int i = 0; i < 8; ++i) c.notes.push_back ({ (double) i, 0.8, 60 + i, 0.8f });
+    inst->clips.push_back (c);
+
+    const auto stackId = (int) t.api.call ("makeStack", juce::JSON::parse ("{\"trackId\":" + juce::String (inst->id) + "}"));
+    auto* stack = t.engine.song.findTrack (stackId);
+    CHECK (stack != nullptr && stack->stack && stack->kind == TrackKind::Bus && inst->output == stackId, "crear una carpeta con la pista adentro");
+    CHECK (t.engine.song.indexOfTrack (stackId) + 1 == t.engine.song.indexOfTrack (inst->id), "la carpeta queda justo arriba de la pista");
+    CHECK (stack != nullptr && stack->inserts.empty(), "la carpeta no trae efectos");
+    t.api.call ("addToStack", juce::JSON::parse ("{\"trackId\":" + juce::String (other->id) + ",\"stackId\":" + juce::String (stackId) + "}"));
+    CHECK (other->output == stackId && t.engine.song.indexOfTrack (other->id) == t.engine.song.indexOfTrack (inst->id) + 1, "otra pista entra a la carpeta, debajo de la primera");
+
+    auto rms = [] (const juce::AudioBuffer<float>& b) { return b.getRMSLevel (0, 0, b.getNumSamples()); };
+    const auto before = t.engine.renderRange (0, 8);
+    CHECK (rms (before) > 1.0e-3f, "la carpeta suena (lo de adentro pasa por ella)");
+    if (stack != nullptr) stack->mute = true;
+    CHECK (rms (t.engine.renderRange (0, 8)) < 1.0e-6f, "silenciar la carpeta silencia todo lo de adentro");
+    if (stack != nullptr) stack->mute = false;
+
+    auto r = t.engine.freezeTrack (inst->id, true);
+    CHECK (r.wasOk() && inst->frozen && inst->frozenAudio != nullptr, "congelar la pista (" << r.getErrorMessage() << ")");
+    inst->instrument.bypass = true;   // the live instrument doesn't matter any more
+    const auto frozen = t.engine.renderRange (0, 8);
+    const float r0 = rms (before), r1 = rms (frozen);
+    CHECK (r1 > r0 * 0.9f && r1 < r0 * 1.1f, "congelada suena igual que antes (" << r0 << " y " << r1 << ")");
+    const int instId = inst->id;
+    CHECK (t.engine.saveSong().wasOk() && t.engine.loadSong (t.engine.songFolder).wasOk(), "se guarda congelada");
+    inst = t.engine.song.findTrack (instId);
+    CHECK (inst != nullptr && inst->frozen && inst->frozenAudio != nullptr, "y abre congelada");
+    if (inst != nullptr)
+    {
+        t.engine.freezeTrack (inst->id, false);
+        CHECK (! inst->frozen && inst->frozenAudio == nullptr, "descongelar vuelve al instrumento");
+    }
+    t.api.call ("unstack", juce::JSON::parse ("{\"trackId\":" + juce::String (stackId) + "}"));
+    CHECK (t.engine.song.findTrack (stackId) == nullptr && t.engine.song.tracks.size() == 2 && t.engine.song.tracks[0]->output == 0, "deshacer la carpeta deja las pistas");
+}
+
 static void testRetuneAndPresets()
 {
     std::cout << "Afinación virtual y sonidos listos\n";
@@ -2810,6 +2926,9 @@ int main()
     testRealDrums();
     testGuitarTone();
     testRetuneAndPresets();
+    testTempoAndMeterChanges();
+    testArrangement();
+    testStacksAndFreeze();
     testTunerPitch();
     testStringRetune();
     testGuitarGate();

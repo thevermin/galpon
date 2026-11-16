@@ -161,6 +161,7 @@ MainComponent::~MainComponent()
     engine.onSongChanged = nullptr;
     engine.plugins.onChange = nullptr;
     pluginWindows.closeAll();
+    videoWindow.reset();
 }
 
 void MainComponent::paint (juce::Graphics& g)
@@ -215,6 +216,98 @@ void MainComponent::emit (const juce::String& event, const juce::var& payload)
 void MainComponent::timerCallback()
 {
     emit ("tick", api.getTick());
+    syncVideo();
+}
+
+//==============================================================================
+// Video track (Mac and Windows: the system's own video player)
+//==============================================================================
+#if JUCE_MAC || JUCE_WINDOWS
+namespace
+{
+    class VideoWindow : public juce::DocumentWindow
+    {
+    public:
+        VideoWindow (const juce::String& title)
+            : juce::DocumentWindow (title, juce::Colours::black, juce::DocumentWindow::closeButton | juce::DocumentWindow::minimiseButton)
+        {
+            setUsingNativeTitleBar (true);
+            setContentNonOwned (&video, false);
+            setResizable (true, true);
+            setResizeLimits (240, 135, 4000, 3000);
+            centreWithSize (640, 360);
+            setAlwaysOnTop (true);
+            video.setAudioVolume (0.0f);   // the sound goes through Galpon (import it as a track)
+        }
+        void closeButtonPressed() override { setVisible (false); }
+        juce::VideoComponent video { false };
+    };
+}
+#endif
+
+void MainComponent::showVideo (bool show)
+{
+   #if JUCE_MAC || JUCE_WINDOWS
+    if (! show) { if (videoWindow != nullptr) videoWindow->setVisible (false); return; }
+    if (engine.song.videoFile.isEmpty()) return;
+    if (videoWindow == nullptr) { videoWindow = std::make_unique<VideoWindow> ("Video"); loadedVideo = {}; }
+    videoWindow->setVisible (true);
+    videoWindow->toFront (false);
+    syncVideo();
+   #else
+    juce::ignoreUnused (show);
+   #endif
+}
+
+void MainComponent::syncVideo()
+{
+   #if JUCE_MAC || JUCE_WINDOWS
+    auto* win = dynamic_cast<VideoWindow*> (videoWindow.get());
+    if (win == nullptr) return;
+    auto& v = win->video;
+    const auto file = engine.song.videoFile;
+    if (file != loadedVideo)
+    {
+        loadedVideo = file;
+        lastVideoSeek = -1.0;
+        if (file.isEmpty()) { v.closeVideo(); win->setVisible (false); return; }
+        const auto r = v.load (juce::File (file));
+        if (r.failed()) { emit ("toast", juce::String (u8"No se pudo abrir el video: ") + r.getErrorMessage()); return; }
+        win->setName (juce::File (file).getFileName());
+        const auto size = v.getVideoNativeSize();
+        if (size.getWidth() > 0 && size.getHeight() > 0)
+        {
+            const double scale = juce::jmin (1.0, 720.0 / size.getWidth());
+            win->setSize (juce::roundToInt (size.getWidth() * scale), juce::roundToInt (size.getHeight() * scale));
+        }
+        if (std::abs (v.getVideoDuration() - engine.song.videoDuration) > 0.01)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("duration", v.getVideoDuration());
+            api.call ("setVideo", juce::var (o));
+        }
+    }
+    if (! v.isVideoOpen()) return;
+
+    // where the playhead is, in the movie (what you hear comes out a little late: so does the picture)
+    const double beat = engine.getPositionBeats();
+    const double latency = engine.isPlaying() ? engine.outputLatencySeconds() : 0.0;
+    const double t = engine.song.secondsAt (beat) - engine.song.secondsAt (engine.song.videoStart) - latency;
+    const double dur = v.getVideoDuration();
+    const bool inside = t >= 0.0 && (dur <= 0.0 || t < dur);
+    if (engine.isPlaying() && inside)
+    {
+        if (! v.isPlaying()) { v.setPlayPosition (t); v.play(); }
+        else if (std::abs (v.getPlayPosition() - t) > 0.15) v.setPlayPosition (t);   // drifted: catch up
+        lastVideoSeek = -1.0;
+    }
+    else
+    {
+        if (v.isPlaying()) v.stop();
+        const double at = juce::jlimit (0.0, juce::jmax (0.0, dur), t);
+        if (std::abs (at - lastVideoSeek) > 0.02) { v.setPlayPosition (at); lastVideoSeek = at; }   // follows the cursor while stopped
+    }
+   #endif
 }
 
 void MainComponent::handle (const juce::String& cmd, const juce::var& args,
@@ -223,6 +316,12 @@ void MainComponent::handle (const juce::String& cmd, const juce::var& args,
     if (cmd == "choose")
     {
         choose (args, std::move (done));
+        return;
+    }
+    if (cmd == "showVideo")
+    {
+        showVideo ((bool) getOrDefault (args, "on", true));
+        done (obj ({ { "ok", true } }));
         return;
     }
     if (cmd == "revealSongFolder")

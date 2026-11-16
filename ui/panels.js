@@ -620,7 +620,7 @@
     const gainText = el('span.note', { text: G.dbToText(clip.gainDb || 0) });
     gain.addEventListener('input', () => { gainText.textContent = G.dbToText(+gain.value); });
     gain.addEventListener('change', () => G.run('setClip', { trackId: track.id, clipId: clip.id, gainDb: +gain.value }));
-    const seconds = clip.length * 60 / G.state.song.bpm;
+    const seconds = G.Timeline.secondsBetween(clip.start, clip.start + clip.length);
 
     // Flex controls (like Logic's Flex Pitch / Flex Time)
     const songKey = G.chordLabel(G.state.song.key) + (G.state.song.minor ? ' menor' : ' mayor');
@@ -708,7 +708,7 @@
       g.fillStyle = '#0f0f11'; g.fillRect(0, 0, w, H);
       if (peaks && peaks.peaks) {
         g.fillStyle = 'rgba(255,255,255,0.07)';
-        const spb = peaks.sampleRate * 60 / G.state.song.bpm, startS = clip.offsetSamples, lenS = clip.length * spb;
+        const startS = clip.offsetSamples, lenS = G.Timeline.secondsBetween(clip.start, clip.start + clip.length) * peaks.sampleRate;
         for (let x = 0; x < w; x++) {
           const v = peaks.peaks[Math.floor((startS + x / w * lenS) / peaks.samples * peaks.peaks.length)] || 0;
           g.fillRect(x, H / 2 - v * H / 2, 1, Math.max(1, v * H));

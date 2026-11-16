@@ -203,6 +203,11 @@ struct SongSection
     juce::String kind = "verse";   // intro, verse, prechorus, chorus, bridge, solo, outro
 };
 
+/** From `beat` on, the song goes at `bpm` (a step: it changes right there) */
+struct TempoChange { double beat = 0.0, bpm = 120.0; };
+/** From `beat` on (the start of a bar), the bars are num/den */
+struct MeterChange { double beat = 0.0; int num = 4, den = 4; };
+
 //==============================================================================
 struct DrummerSettings
 {
@@ -237,6 +242,13 @@ struct Track
     bool         stereoInput  = false;
     bool         collapsed    = false;
     float        inputGainDb  = 0.0f;   // audio tracks: boost or cut what comes in (monitor, recording, tuner)
+    // Track stack (folder): a bus marked as a stack shows the tracks that go into it under it
+    bool         stack     = false;
+    bool         stackOpen = true;
+    // Frozen: the instrument and effects were rendered to audio once; that plays instead (saves CPU)
+    bool         frozen = false;
+    juce::String frozenFile;   // in the song's Audio folder
+    std::shared_ptr<const juce::AudioBuffer<float>> frozenAudio;
 
     Slot              instrument;
     std::vector<Slot> inserts;
@@ -290,6 +302,13 @@ struct Song
     std::vector<Slot> masterInserts;
     std::vector<ChordSpan> chords;
     std::vector<SongSection> sections;
+    // Tempo and meter can change along the song (empty = `bpm` and `sigNum/sigDen` all the way)
+    std::vector<TempoChange> tempoChanges;   // sorted by beat, all after 0
+    std::vector<MeterChange> meterChanges;   // sorted by beat, each at the start of a bar
+    // Video track: a movie that plays along (like scoring to picture). The file stays where it is.
+    juce::String videoFile;          // full path, "" = none
+    double videoStart = 0.0;         // beat where the movie's first frame is
+    double videoDuration = 0.0;      // seconds (the app tells once it opens it)
     int nextId = 1;
 
     int newId() noexcept { return nextId++; }
@@ -297,6 +316,15 @@ struct Song
     int indexOfTrack (int trackId) const;
     double beatsPerBar() const noexcept { return sigNum * 4.0 / sigDen; }
     double lengthInBeats() const;   // end of the last clip
+
+    // ---- time: beats <-> seconds through the tempo changes; bars through the meter changes
+    double bpmAt (double beat) const noexcept;
+    double secondsAt (double beat) const noexcept;
+    double beatAtSeconds (double seconds) const noexcept;
+    MeterChange meterAt (double beat) const noexcept;
+    double beatsPerBarAt (double beat) const noexcept { const auto m = meterAt (beat); return m.num * 4.0 / m.den; }
+    double barStartAtOrBefore (double beat) const noexcept;
+    void sortTimeChanges();
 };
 
 //==============================================================================
@@ -314,6 +342,10 @@ void      drummerFromVar (DrummerSettings&, const juce::var&);
 
 juce::var chordsToVar (const std::vector<ChordSpan>&);
 std::vector<ChordSpan> chordsFromVar (const juce::var&);
+juce::var tempoChangesToVar (const std::vector<TempoChange>&);
+std::vector<TempoChange> tempoChangesFromVar (const juce::var&);
+juce::var meterChangesToVar (const std::vector<MeterChange>&);
+std::vector<MeterChange> meterChangesFromVar (const juce::var&);
 juce::var sectionsToVar (const std::vector<SongSection>&);
 std::vector<SongSection> sectionsFromVar (const juce::var&);
 juce::var automationToVar (const std::vector<AutomationLane>&);

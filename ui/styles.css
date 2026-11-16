@@ -116,6 +116,14 @@ input, select { font: inherit; color: var(--text); }
 
 .thead { height: var(--track-h); border-bottom: 1px solid var(--raised2); border-left: 4px solid var(--c); display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 0 10px; background: var(--bg); }
 .thead.sel { background: #222227; }
+.thead.instack { padding-left: 22px; border-left-width: 4px; box-shadow: inset 12px 0 0 rgba(255,255,255,0.03); }
+.thead.folder .tname { display: flex; align-items: center; gap: 4px; }
+.thead .fold { background: none; border: 0; color: var(--text, #ddd); font-size: 12px; width: 16px; padding: 0; cursor: pointer; }
+.thead .tb.frz.on { background: #2b5a86; color: #dff1ff; }
+.lane.folder { background: rgba(255,255,255,0.025); }
+.lane .stackclip { position: absolute; border-radius: 2px; opacity: 0.4; pointer-events: auto; }
+.lane.frozen .clip { pointer-events: none; filter: saturate(0.35) brightness(0.85); }
+.lane .frozen-tag { position: sticky; left: 8px; top: 4px; font-size: 10px; color: #9cc8ee; pointer-events: none; z-index: 2; }
 .thead .top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .thead .names { display: flex; flex-direction: column; min-width: 0; }
 .thead .tname { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -596,3 +604,13 @@ body.in-game #app { visibility: hidden; }
 /* the lyrics live at the top of the stage (not over the game), with room kept for them */
 .g-stage.g-with-lyrics { padding-top: 78px; }
 .g-stage > .g-lyrics { top: 8px; }
+
+/* video track */
+#video-row { display: flex; height: 30px; border-bottom: 1px solid var(--line); background: #141416; flex: none; }
+#video-corner { width: var(--header-w); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-right: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+#video-scroll { position: relative; flex: 1 1 auto; overflow: hidden; }
+#video-strip { position: absolute; left: 0; top: 0; bottom: 0; }
+.videoclip { position: absolute; top: 3px; bottom: 3px; border-radius: 4px; cursor: grab; overflow: hidden; color: #fff; font-size: 11px; line-height: 24px; padding: 0 8px; white-space: nowrap;
+  background: repeating-linear-gradient(90deg, #3a3a40 0 3px, #26262b 3px 14px); border: 1px solid #55555e; box-shadow: inset 0 3px 0 #111, inset 0 -3px 0 #111; }
+.videoclip.missing { border-color: #a14b4b; color: #f2b8b8; }
+.videoclip.drag { cursor: grabbing; opacity: 0.85; }

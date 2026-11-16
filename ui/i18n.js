@@ -14,6 +14,53 @@
     location.reload();
   };
   const EN = {
+"Compás de la canción": "Song time signature",
+"Cambiar el tempo desde acá…": "Change the tempo from here…",
+"Cambiar el tempo de acá…": "Change this tempo change…",
+"Cambiar el compás desde acá…": "Change the time signature from here…",
+"Cambiar el compás de acá…": "Change this time signature change…",
+"Quitar este cambio de tempo": "Remove this tempo change",
+"Quitar este cambio de compás": "Remove this time signature change",
+"Cambiar el tempo del principio…": "Change the starting tempo…",
+"Quitar todos los cambios de tempo": "Remove all tempo changes",
+"Con todo lo que suena en todas las pistas": "With everything playing on every track",
+"Duplicar esta parte": "Duplicate this section",
+"Mover antes de…": "Move before…",
+"Borrar esta parte con lo que suena": "Delete this section and its music",
+"Quitar solo la marca": "Remove just the marker",
+"Al final": "To the end",
+"Elige una parte de la canción": "Choose a section of the song",
+"Carpeta": "Folder",
+"❄ Congelada": "❄ Frozen",
+"Carpeta · 1 pista": "Folder · 1 track",
+"Cerrar la carpeta": "Close the folder",
+"Abrir la carpeta": "Open the folder",
+"Congelada: suena lo ya calculado y no gasta procesador. Clic para descongelarla y editarla": "Frozen: it plays what was already rendered and uses no CPU. Click to unfreeze and edit it",
+"Descongelar (para editarla)": "Unfreeze (to edit it)",
+"Congelar (ahorra procesador)": "Freeze (saves CPU)",
+"Deshacer la carpeta (quedan las pistas)": "Ungroup the folder (the tracks stay)",
+"Eliminar la carpeta": "Delete the folder",
+"Crear una carpeta con esta pista": "Create a folder with this track",
+"Nombre de la carpeta": "Folder name",
+"La pista está congelada: descongélala (❄) para editarla.": "The track is frozen: unfreeze it (❄) to edit it.",
+"No se pudo congelar": "Couldn't freeze",
+"Esa pista no se puede congelar": "That track can't be frozen",
+"La pista está vacía: no hay nada para congelar": "The track is empty: nothing to freeze",
+"Elige una pista": "Choose a track",
+"No se pudo crear la carpeta": "Couldn't create the folder",
+"Video": "Video",
+"Ver": "Show",
+"Mostrar la ventana del video": "Show the video window",
+"Una película o un clip para musicalizar: se ve junto con la canción": "A movie or clip to score: it plays along with the song",
+"Ver el video": "Show the video",
+"Que empiece en el cursor": "Start it at the playhead",
+"Que empiece al principio": "Start it at the beginning",
+"Importar el sonido del video a una pista": "Import the video's sound to a track",
+"Cambiar el video…": "Change the video…",
+"Quitar el video": "Remove the video",
+"Elegir un video": "Choose a video",
+"No encuentro ese video": "Can't find that video",
+"No se pudo abrir el video: ": "Couldn't open the video: ",
 "Entrada y salida en aparatos distintos": "Input and output on different devices",
 "Usa el mismo aparato para entrar y salir.": "Use the same device for input and output.",
 "Dejar así": "Leave it",
@@ -1061,6 +1108,70 @@
 "Siesta eléctrica": "Siesta eléctrica"
 };
   const PATTERNS = [
+[
+"^Compás (\\d+) · ♩(.*?) · (.*?)$",
+"Bar $1 · ♩$2 · $3"
+],
+[
+"^Tempo desde el compás (\\d+) \\(pulsos por minuto\\)$",
+"Tempo from bar $1 (beats per minute)"
+],
+[
+"^Compás desde el compás (\\d+)$",
+"Time signature from bar $1"
+],
+[
+"^Cambiar el tempo del compás (\\d+)…$",
+"Change the tempo of bar $1…"
+],
+[
+"^Cambiar el tempo desde el compás (\\d+)…$",
+"Change the tempo from bar $1…"
+],
+[
+"^Carpeta · (\\d+) pistas$",
+"Folder · $1 tracks"
+],
+[
+"^Mover a la carpeta \\\"(.*?)\\\"$",
+"Move to the folder \"$1\""
+],
+[
+"^Sacar de la carpeta \\\"(.*?)\\\"$",
+"Take out of the folder \"$1\""
+],
+[
+"^Congelando \\\"(.*?)\\\"…$",
+"Freezing \"$1\"…"
+],
+[
+"^\\\"(.*?)\\\" quedó congelada: ya no gasta procesador\\. Para editarla, descongélala \\(❄\\)\\.$",
+"\"$1\" is frozen: it no longer uses CPU. To edit it, unfreeze it (❄)."
+],
+[
+"^Mover (.*?) antes de…$",
+"Move $1 before…"
+],
+[
+"^(.*?) \\(compás (\\d+)\\)$",
+"$1 (bar $2)"
+],
+[
+"^(.*?) — arrástrala para moverla con su música \\(⌥ mueve solo la marca\\), el borde derecho la alarga, clic para más$",
+"$1 — drag to move it with its music (⌥ moves just the marker), the right edge stretches it, click for more"
+],
+[
+"^(.*?) — arrástralo para que empiece en otro lugar, clic para más$",
+"$1 — drag it to start somewhere else, click for more"
+],
+[
+"^No encuentro (.*?)$",
+"Can't find $1"
+],
+[
+"^No pude sacar el sonido de este video \\((.*?)\\)\\. Exporta el audio como WAV o M4A e impórtalo\\.$",
+"Couldn't get the sound out of this video ($1). Export the audio as WAV or M4A and import it."
+],
 [
 "^Grabas\\ con\\ (.*?)\\ y\\ escuchas\\ por\\ (.*?)\\.\\ Cada\\ aparato\\ tiene\\ su\\ propio\\ reloj\\ y\\ se\\ van\\ desfasando:\\ eso\\ se\\ escucha\\ como\\ chasquidos\\ o\\ estática,\\ sobre\\ todo\\ con\\ amplificadores\\ y\\ plugins\\.$",
 "You record with $1 and listen through $2. Each device has its own clock and they drift apart: that sounds like clicks or static, especially with amps and plugins."

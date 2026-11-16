@@ -42,6 +42,178 @@ namespace
 EngineApi::EngineApi (Engine& e) : engine (e) {}
 
 //==============================================================================
+//==============================================================================
+/** Cuts `c` at `at` (inside it): `c` keeps the left part, the right part is returned with a new id.
+    MIDI loops are unrolled so both halves keep exactly what was heard. Call with the lock held. */
+static Clip cutClip (Engine& engine, Clip& c, double at)
+{
+    Clip right = c;
+    right.id = engine.song.newId();
+    const double cut = at - c.start;
+    right.start = at;
+    right.length = c.length - cut;
+    if (c.midi)
+    {
+        right.notes.clear();
+        std::vector<Note> left;
+        const double L = juce::jmax (0.25, juce::jmin (c.loopLength, c.length));
+        for (double rep = 0; rep < c.length; rep += L)
+            for (auto& n : c.notes)
+            {
+                if (n.beat >= L) continue;
+                const double b = rep + n.beat;
+                if (b >= c.length) continue;
+                Note copy = n;
+                if (b < cut) { copy.beat = b; copy.length = juce::jmin (n.length, cut - b); left.push_back (copy); }
+                else         { copy.beat = b - cut; right.notes.push_back (copy); }
+            }
+        std::vector<MidiEvent> leftEv, rightEv;
+        for (auto e : c.events) { if (e.beat < cut) leftEv.push_back (e); else { e.beat -= cut; rightEv.push_back (e); } }
+        right.events = std::move (rightEv);
+        right.loopLength = right.length;
+        right.locked = true;
+        c.notes = std::move (left);
+        c.events = std::move (leftEv);
+        c.loopLength = cut;
+        c.length = cut;
+        c.locked = true;
+    }
+    else
+    {
+        right.offsetSamples = c.offsetSamples + (juce::int64) engine.samplesFor (c.start, cut);
+        c.length = cut;
+    }
+    return right;
+}
+
+/** Arrangement edits on a stretch of the song [a, a+len), on every track at once (like GarageBand's
+    arrangement track): "delete" closes the gap, "duplicate" puts a copy right after, "move" takes
+    it to `to` (everything in between slides over). Regions crossing the edges are cut. */
+static void arrangeSection (Engine& engine, const juce::String& op, double a, double len, double to)
+{
+    auto& song = engine.song;
+    const double b = a + len;
+    const double eps = 1.0e-6;
+
+    auto cutAllAt = [&] (double at)
+    {
+        for (auto& t : song.tracks)
+        {
+            std::vector<Clip> extra;
+            for (auto& c : t->clips)
+                if (at > c.start + eps && at < c.end() - eps) extra.push_back (cutClip (engine, c, at));
+            for (auto& c : extra) t->clips.push_back (std::move (c));
+        }
+        for (size_t i = 0; i < song.chords.size(); ++i)
+        {
+            auto& ch = song.chords[i];
+            if (at > ch.beat + eps && at < ch.beat + ch.length - eps)
+            {
+                ChordSpan r = ch; r.beat = at; r.length = ch.beat + ch.length - at;
+                ch.length = at - ch.beat;
+                song.chords.push_back (r);
+            }
+        }
+        for (size_t i = 0; i < song.sections.size(); ++i)
+        {
+            auto& p = song.sections[i];
+            if (at > p.beat + eps && at < p.beat + p.length - eps)
+            {
+                SongSection r = p; r.beat = at; r.length = p.beat + p.length - at;
+                p.length = at - p.beat;
+                song.sections.push_back (r);
+            }
+        }
+    };
+
+    // shift everything from `from` on by `d` (d < 0: what's in [from + d, from) must be gone already)
+    auto shiftFrom = [&] (double from, double d)
+    {
+        for (auto& t : song.tracks)
+        {
+            for (auto& c : t->clips) if (c.start >= from - eps) c.start += d;
+            for (auto& l : t->automation) for (auto& p : l.points) if (p.beat >= from - eps) p.beat += d;
+        }
+        for (auto& c : song.chords) if (c.beat >= from - eps) c.beat += d;
+        for (auto& p : song.sections) if (p.beat >= from - eps) p.beat += d;
+        for (auto& tc : song.tempoChanges) if (tc.beat >= from - eps && tc.beat > eps) tc.beat += d;
+        for (auto& m : song.meterChanges) if (m.beat >= from - eps && m.beat > eps) m.beat += d;
+    };
+
+    auto removeRange = [&] (double x, double y)
+    {
+        for (auto& t : song.tracks)
+        {
+            t->clips.erase (std::remove_if (t->clips.begin(), t->clips.end(), [&] (const Clip& c) { return c.start >= x - eps && c.start < y - eps; }), t->clips.end());
+            for (auto& l : t->automation)
+                l.points.erase (std::remove_if (l.points.begin(), l.points.end(), [&] (const AutoPoint& p) { return p.beat >= x - eps && p.beat < y - eps; }), l.points.end());
+        }
+        song.chords.erase (std::remove_if (song.chords.begin(), song.chords.end(), [&] (const ChordSpan& c) { return c.beat >= x - eps && c.beat < y - eps; }), song.chords.end());
+        song.sections.erase (std::remove_if (song.sections.begin(), song.sections.end(), [&] (const SongSection& p) { return p.beat >= x - eps && p.beat < y - eps; }), song.sections.end());
+        song.tempoChanges.erase (std::remove_if (song.tempoChanges.begin(), song.tempoChanges.end(), [&] (const TempoChange& c) { return c.beat > x + eps && c.beat < y - eps; }), song.tempoChanges.end());
+        song.meterChanges.erase (std::remove_if (song.meterChanges.begin(), song.meterChanges.end(), [&] (const MeterChange& c) { return c.beat > x + eps && c.beat < y - eps; }), song.meterChanges.end());
+    };
+
+    struct Slice
+    {
+        std::vector<std::pair<Track*, Clip>> clips;
+        std::vector<std::pair<AutomationLane*, AutoPoint>> points;
+        std::vector<ChordSpan> chords;
+        std::vector<SongSection> sections;
+    };
+    auto copyRange = [&] (double x, double y)
+    {
+        Slice s;
+        for (auto& t : song.tracks)
+        {
+            for (auto& c : t->clips) if (c.start >= x - eps && c.start < y - eps) { Clip k = c; k.start -= x; s.clips.push_back ({ t.get(), k }); }
+            for (auto& l : t->automation) for (auto& p : l.points) if (p.beat >= x - eps && p.beat < y - eps) { auto k = p; k.beat -= x; s.points.push_back ({ &l, k }); }
+        }
+        for (auto& c : song.chords) if (c.beat >= x - eps && c.beat < y - eps) { auto k = c; k.beat -= x; s.chords.push_back (k); }
+        for (auto& p : song.sections) if (p.beat >= x - eps && p.beat < y - eps) { auto k = p; k.beat -= x; s.sections.push_back (k); }
+        return s;
+    };
+    auto paste = [&] (const Slice& s, double at)
+    {
+        for (auto& [t, c] : s.clips) { Clip k = c; k.id = song.newId(); k.start += at; t->clips.push_back (std::move (k)); }
+        for (auto& [l, p] : s.points) { auto k = p; k.beat += at; l->points.push_back (k); }
+        for (auto c : s.chords) { c.beat += at; song.chords.push_back (c); }
+        for (auto p : s.sections) { p.beat += at; song.sections.push_back (p); }
+    };
+
+    cutAllAt (a);
+    cutAllAt (b);
+    if (op == "delete")
+    {
+        removeRange (a, b);
+        shiftFrom (b, -len);
+    }
+    else if (op == "duplicate" || op == "move")
+    {
+        const double dest = op == "duplicate" ? b : to;
+        if (op == "move" && dest > a - eps && dest < b + eps) return;   // onto itself
+        cutAllAt (dest);
+        const auto slice = copyRange (a, b);
+        shiftFrom (dest, len);   // open the gap
+        paste (slice, dest);
+        if (op == "move")
+        {
+            const double from = dest <= a ? a + len : a;   // where the original is now
+            removeRange (from, from + len);
+            shiftFrom (from + len, -len);
+        }
+    }
+
+    for (auto& t : song.tracks)
+    {
+        std::sort (t->clips.begin(), t->clips.end(), [] (const Clip& x, const Clip& y) { return x.start < y.start; });
+        for (auto& l : t->automation) std::sort (l.points.begin(), l.points.end(), [] (auto& x, auto& y) { return x.beat < y.beat; });
+    }
+    std::sort (song.chords.begin(), song.chords.end(), [] (auto& x, auto& y) { return x.beat < y.beat; });
+    std::sort (song.sections.begin(), song.sections.end(), [] (auto& x, auto& y) { return x.beat < y.beat; });
+    song.sortTimeChanges();
+}
+
 juce::var EngineApi::slotInfo (const Slot& s) const
 {
     auto* o = new juce::DynamicObject();
@@ -69,6 +241,8 @@ juce::var EngineApi::getState()
     s->setProperty ("bpm", song.bpm);
     s->setProperty ("sigNum", song.sigNum);
     s->setProperty ("sigDen", song.sigDen);
+    s->setProperty ("tempoChanges", tempoChangesToVar (song.tempoChanges));
+    s->setProperty ("meterChanges", meterChangesToVar (song.meterChanges));
     s->setProperty ("key", song.key);
     s->setProperty ("minor", song.minor);
     s->setProperty ("cycle", song.cycle);
@@ -102,6 +276,9 @@ juce::var EngineApi::getState()
         o->setProperty ("output", t->output);
         o->setProperty ("automation", automationToVar (t->automation));
         o->setProperty ("autoWrite", t->autoWrite);
+        o->setProperty ("stack", t->stack);
+        o->setProperty ("stackOpen", t->stackOpen);
+        o->setProperty ("frozen", t->frozen);
         if (! t->instrument.isEmpty())
             o->setProperty ("instrument", slotInfo (t->instrument));
         juce::Array<juce::var> inserts;
@@ -132,6 +309,18 @@ juce::var EngineApi::getState()
     }
     root->setProperty ("chords", chords);
     root->setProperty ("sections", sectionsToVar (song.sections));
+    if (song.videoFile.isNotEmpty())
+    {
+        auto* vo = new juce::DynamicObject();
+        vo->setProperty ("file", song.videoFile);
+        vo->setProperty ("name", juce::File (song.videoFile).getFileName());
+        vo->setProperty ("exists", juce::File (song.videoFile).existsAsFile());
+        vo->setProperty ("start", song.videoStart);
+        vo->setProperty ("duration", song.videoDuration);
+        root->setProperty ("video", juce::var (vo));
+    }
+    root->setProperty ("tempoChanges", tempoChangesToVar (song.tempoChanges));
+    root->setProperty ("meterChanges", meterChangesToVar (song.meterChanges));
     {
         juce::Array<juce::var> kinds;
         for (auto& [id, name] : sectionKinds()) kinds.add (juce::Array<juce::var> { id, name });
@@ -748,6 +937,7 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
         if (has (args, "inputChannel")) t->inputChannel = juce::jmax (0, (int) arg (args, "inputChannel"));
         if (has (args, "stereoInput"))  t->stereoInput = (bool) arg (args, "stereoInput");
         if (has (args, "inputGainDb"))  t->inputGainDb = juce::jlimit (-24.0f, 40.0f, (float) (double) arg (args, "inputGainDb"));
+        if (has (args, "stackOpen"))    t->stackOpen = (bool) arg (args, "stackOpen");
         if (has (args, "output"))
         {
             const int out = (int) arg (args, "output");
@@ -802,6 +992,46 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
     //---------------------------------------------------------------- real instruments (sampler)
     if (cmd == "downloadSound") return fromResult (sounds.download (arg (args, "id").toString()));
     if (cmd == "cancelDownload") { sounds.cancel (arg (args, "id").toString()); return ok(); }
+    if (cmd == "setTempoChange")
+    {
+        // { beat, bpm }: from that beat on, this tempo (bpm 0 removes the change there). At 0 it's the song's tempo.
+        const double beat = juce::jmax (0.0, (double) arg (args, "beat", 0.0));
+        const double bpm = (double) arg (args, "bpm", 0.0);
+        if (engine.isRecording()) return fail (juce::String (u8"Mientras grabas no se puede cambiar el tempo"));
+        engine.pushUndo();
+        {
+            const juce::ScopedLock sl (engine.lock);
+            const auto posBeat = engine.getPositionBeats();
+            auto& list = song.tempoChanges;
+            list.erase (std::remove_if (list.begin(), list.end(), [beat] (auto& t) { return std::abs (t.beat - beat) < 1.0e-6; }), list.end());
+            if (beat <= 1.0e-6) { if (bpm > 0) song.bpm = juce::jlimit (20.0, 400.0, bpm); }
+            else if (bpm > 0) list.push_back ({ beat, juce::jlimit (20.0, 400.0, bpm) });
+            song.sortTimeChanges();
+            engine.setPositionBeats (posBeat);    // stay on the same beat, not the same second
+        }
+        changed();
+        return ok();
+    }
+    if (cmd == "setMeterChange")
+    {
+        // { beat, num, den }: from that bar on, this time signature (num 0 removes it). It starts on a bar.
+        double beat = juce::jmax (0.0, (double) arg (args, "beat", 0.0));
+        const int num = (int) arg (args, "num", 0), den = (int) arg (args, "den", 4);
+        if (engine.isRecording()) return fail (juce::String (u8"Mientras grabas no se puede cambiar el compás"));
+        engine.pushUndo();
+        {
+            const juce::ScopedLock sl (engine.lock);
+            auto& list = song.meterChanges;
+            const bool removing = num <= 0;
+            if (! removing) beat = song.barStartAtOrBefore (beat + 1.0e-6);
+            list.erase (std::remove_if (list.begin(), list.end(), [beat] (auto& m) { return std::abs (m.beat - beat) < 1.0e-6; }), list.end());
+            if (beat <= 1.0e-6) { if (! removing) { song.sigNum = juce::jlimit (1, 32, num); song.sigDen = juce::jlimit (1, 32, den); } }
+            else if (! removing) list.push_back ({ beat, juce::jlimit (1, 32, num), juce::jlimit (1, 32, den) });
+            song.sortTimeChanges();
+        }
+        changed();
+        return ok();
+    }
     if (cmd == "setLanguage")
     {
         // { lang: "es" | "en" }: the interface's language (the menus follow it)
@@ -942,7 +1172,7 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
         auto* t = trackArg();
         auto* c = t != nullptr ? t->findClip ((int) arg (args, "clipId", 0)) : nullptr;
         if (c == nullptr || c->midi || c->audio == nullptr) return fail (juce::String (u8"Elige una región de audio"));
-        const int n = (int) engine.beatsToSamples (c->length);
+        const int n = (int) engine.samplesFor (c->start, c->length);
         juce::AudioBuffer<float> audio (c->audio->getNumChannels(), juce::jmax (1, n));
         audio.clear();
         const int avail = (int) std::clamp<juce::int64> ((juce::int64) c->audio->getNumSamples() - c->offsetSamples, 0, n);
@@ -985,6 +1215,117 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
         return ok();
     }
     //---------------------------------------------------------------- parts of the song
+    //---------------------------------------------------------------- video track
+    if (cmd == "setVideo")
+    {
+        // {file?, start?, duration?}; file "" takes the video out
+        if (has (args, "file"))
+        {
+            const auto path = arg (args, "file").toString();
+            if (path.isNotEmpty() && ! juce::File (path).existsAsFile()) return fail (juce::String (u8"No encuentro ese video"));
+            if (path != song.videoFile) song.videoDuration = 0;
+            song.videoFile = path;
+            if (path.isEmpty()) song.videoStart = 0;
+        }
+        if (has (args, "start"))    song.videoStart = juce::jmax (0.0, (double) arg (args, "start"));
+        if (has (args, "duration")) song.videoDuration = juce::jmax (0.0, (double) arg (args, "duration"));
+        engine.dirty = true;
+        changed();
+        return ok();
+    }
+    //---------------------------------------------------------------- track stacks (folders) and freezing
+    if (cmd == "makeStack")
+    {
+        // a folder with this track in it: a bus right above it, the track goes into it
+        auto* t = trackArg();
+        if (t == nullptr || t->kind == TrackKind::Bus) return fail (juce::String (u8"Elige una pista"));
+        engine.pushUndo();
+        const int index = song.indexOfTrack (t->id);
+        auto* bus = engine.addTrack (TrackKind::Bus, "none");
+        if (bus == nullptr) return fail (juce::String (u8"No se pudo crear la carpeta"));
+        {
+            const juce::ScopedLock sl (engine.lock);
+            bus->name = arg (args, "name", juce::String (u8"Carpeta")).toString();
+            bus->stack = true;
+            bus->colour = t->colour;
+            t->output = bus->id;
+        }
+        engine.moveTrack (bus->id, index);
+        engine.dirty = true;
+        changed();
+        return juce::var (bus->id);
+    }
+    if (cmd == "addToStack")
+    {
+        // {trackId, stackId}: stackId 0 = take it out of its folder
+        auto* t = trackArg();
+        const int stackId = (int) arg (args, "stackId", 0);
+        auto* bus = song.findTrack (stackId);
+        if (t == nullptr || t->kind == TrackKind::Bus) return fail (juce::String (u8"Elige una pista"));
+        if (stackId != 0 && (bus == nullptr || ! bus->stack)) return fail (juce::String (u8"Esa carpeta no existe"));
+        engine.pushUndo();
+        const int oldStack = t->output;
+        { const juce::ScopedLock sl (engine.lock); t->output = stackId; }
+        if (stackId != 0)
+        {
+            // right after the folder's last track
+            int last = song.indexOfTrack (stackId);
+            for (int i = last + 1; i < (int) song.tracks.size(); ++i)
+                if (song.tracks[(size_t) i]->output == stackId && song.tracks[(size_t) i].get() != t) last = i;
+            const int from = song.indexOfTrack (t->id);
+            engine.moveTrack (t->id, from < last ? last : last + 1);
+        }
+        else if (auto* old = song.findTrack (oldStack); old != nullptr && old->stack)
+        {
+            // out of the folder: below its last track
+            int last = song.indexOfTrack (oldStack);
+            for (int i = last + 1; i < (int) song.tracks.size(); ++i)
+                if (song.tracks[(size_t) i]->output == oldStack) last = i;
+            const int from = song.indexOfTrack (t->id);
+            engine.moveTrack (t->id, from < last ? last : last + 1);
+        }
+        engine.dirty = true;
+        changed();
+        return ok();
+    }
+    if (cmd == "unstack")
+    {
+        // the folder goes away, its tracks stay (straight to the master)
+        auto* bus = trackArg();
+        if (bus == nullptr || ! bus->stack) return fail (juce::String (u8"Esa carpeta no existe"));
+        engine.pushUndo();
+        {
+            const juce::ScopedLock sl (engine.lock);
+            for (auto& t : song.tracks) if (t->output == bus->id) t->output = bus->output;
+        }
+        engine.deleteTrack (bus->id);
+        changed();
+        return ok();
+    }
+    if (cmd == "freezeTrack")
+    {
+        auto r = engine.freezeTrack ((int) arg (args, "trackId", 0), (bool) arg (args, "on", true));
+        changed();
+        return r.wasOk() ? ok() : fail (r.getErrorMessage());
+    }
+    if (cmd == "arrangeSection")
+    {
+        // {beat, length, op: "delete" | "duplicate" | "move", to}
+        const double a = juce::jmax (0.0, (double) arg (args, "beat", 0.0));
+        const double len = (double) arg (args, "length", 0.0);
+        const juce::String op = arg (args, "op", "duplicate").toString();
+        if (len <= 0.01) return fail (juce::String (u8"Elige una parte de la canción"));
+        engine.pushUndo();
+        {
+            const juce::ScopedLock sl (engine.lock);
+            arrangeSection (engine, op, a, len, juce::jmax (0.0, (double) arg (args, "to", 0.0)));
+            for (auto& t : engine.song.tracks) t->needsAllNotesOff = true;
+        }
+        engine.regenerateAllDrummers();
+        engine.dirty = true;
+        changed();
+        return ok();
+    }
     if (cmd == "setSections")
     {
         // The whole list at once (the interface edits a copy): [{beat, length, kind}]
@@ -1179,40 +1520,10 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
         const double at = (double) arg (args, "beat", 0.0);
         if (c == nullptr || at <= c->start + 0.01 || at >= c->end() - 0.01) return fail (juce::String (u8"Pon el cursor dentro de la región para dividirla"));
         engine.pushUndo();
-        Clip right = *c;
-        right.id = song.newId();
-        const double cut = at - c->start;
-        right.start = at;
-        right.length = c->length - cut;
-        if (c->midi)
+        Clip right;
         {
-            right.notes.clear();
-            std::vector<Note> left;
-            const double L = juce::jmax (0.25, juce::jmin (c->loopLength, c->length));
-            // unroll loops so both halves keep exactly what was heard
-            for (double rep = 0; rep < c->length; rep += L)
-                for (auto& n : c->notes)
-                {
-                    if (n.beat >= L) continue;
-                    const double b = rep + n.beat;
-                    if (b >= c->length) continue;
-                    Note copy = n;
-                    if (b < cut) { copy.beat = b; copy.length = juce::jmin (n.length, cut - b); left.push_back (copy); }
-                    else         { copy.beat = b - cut; right.notes.push_back (copy); }
-                }
-            right.loopLength = right.length;
-            right.locked = true;
             const juce::ScopedLock sl (engine.lock);
-            c->notes = std::move (left);
-            c->loopLength = cut;
-            c->length = cut;
-            c->locked = true;
-        }
-        else
-        {
-            right.offsetSamples = c->offsetSamples + (juce::int64) engine.beatsToSamples (cut);
-            const juce::ScopedLock sl (engine.lock);
-            c->length = cut;
+            right = cutClip (engine, *c, at);
         }
         engine.addClip (*t, std::move (right));
         changed();

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 # Universal binary on Mac is optional; by default we build for the machine you are on.
-project(Galpon VERSION 0.15.0 LANGUAGES C CXX)
+project(Galpon VERSION 0.16.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -136,7 +136,7 @@ if (GALPON_BUILD_APP)
         JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:Galpon,JUCE_VERSION>")
 
     galpon_link_common(Galpon)
-    target_link_libraries(Galpon PRIVATE GalponUI juce::juce_gui_extra)
+    target_link_libraries(Galpon PRIVATE GalponUI juce::juce_gui_extra juce::juce_video)
 endif()
 
 # ---------------------------------------------------------------------------

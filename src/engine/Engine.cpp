@@ -147,6 +147,8 @@ void Engine::newSong (const juce::String& name)
         song.key = fresh.key; song.minor = fresh.minor;
         song.cycle = false; song.cycleStart = 0; song.cycleEnd = 16;
         song.metronome = true; song.countIn = true; song.masterDb = 0; song.nextId = 1;
+        song.tempoChanges.clear(); song.meterChanges.clear();
+        song.videoFile = {}; song.videoStart = 0; song.videoDuration = 0;
         position = 0;
     }
     audioCache.clear();
@@ -272,6 +274,8 @@ juce::Result Engine::saveSong (const juce::File& target)
             o->setProperty ("inputChannel", t->inputChannel);
             o->setProperty ("stereoInput", t->stereoInput);
             o->setProperty ("inputGainDb", t->inputGainDb);
+            if (t->stack) { o->setProperty ("stack", true); o->setProperty ("stackOpen", t->stackOpen); }
+            if (t->frozen) { o->setProperty ("frozen", true); o->setProperty ("frozenFile", t->frozenFile); }
             o->setProperty ("sends", sendsToVar (t->sends));
             o->setProperty ("output", t->output);
             o->setProperty ("automation", automationToVar (t->automation));
@@ -293,6 +297,16 @@ juce::Result Engine::saveSong (const juce::File& target)
         root->setProperty ("master", master);
         root->setProperty ("chords", chordsToVar (song.chords));
         root->setProperty ("sections", sectionsToVar (song.sections));
+        root->setProperty ("tempoChanges", tempoChangesToVar (song.tempoChanges));
+        root->setProperty ("meterChanges", meterChangesToVar (song.meterChanges));
+        if (song.videoFile.isNotEmpty())
+        {
+            auto* vo = new juce::DynamicObject();
+            vo->setProperty ("file", song.videoFile);
+            vo->setProperty ("start", song.videoStart);
+            vo->setProperty ("duration", song.videoDuration);
+            root->setProperty ("video", juce::var (vo));
+        }
     }
 
     {
@@ -390,6 +404,12 @@ juce::Result Engine::loadSong (const juce::File& folderIn)
                     t->clips.push_back (std::move (c));
                 }
             t->inputGainDb = (float) (double) getOrDefault (tv, "inputGainDb", 0.0);
+            t->stack = (bool) getOrDefault (tv, "stack", false);
+            t->stackOpen = (bool) getOrDefault (tv, "stackOpen", true);
+            t->frozenFile = getOrDefault (tv, "frozenFile", "").toString();
+            if ((bool) getOrDefault (tv, "frozen", false) && t->frozenFile.isNotEmpty())
+                t->frozenAudio = loadAudio (t->frozenFile);
+            t->frozen = t->frozenAudio != nullptr;   // the file went missing: back to the live instrument
             t->sends = sendsFromVar (getOrDefault (tv, "sends", {}));
             t->output = (int) getOrDefault (tv, "output", 0);
             t->automation = automationFromVar (getOrDefault (tv, "automation", {}));
@@ -416,6 +436,15 @@ juce::Result Engine::loadSong (const juce::File& folderIn)
         song.limiter = loaded.limiter;
         song.chords = chordsFromVar (getOrDefault (v, "chords", {}));
         song.sections = sectionsFromVar (getOrDefault (v, "sections", {}));
+        song.tempoChanges = tempoChangesFromVar (getOrDefault (v, "tempoChanges", {}));
+        song.meterChanges = meterChangesFromVar (getOrDefault (v, "meterChanges", {}));
+        {
+            const auto vv = getOrDefault (v, "video", {});
+            song.videoFile = getOrDefault (vv, "file", "").toString();
+            song.videoStart = (double) getOrDefault (vv, "start", 0.0);
+            song.videoDuration = (double) getOrDefault (vv, "duration", 0.0);
+        }
+        song.sortTimeChanges();
         position = 0;
     }
     // old tracks (now in `loaded`) are destroyed here, outside the lock
@@ -468,9 +497,12 @@ void Engine::reloadAudioForSampleRate()
 {
     audioCache.clear();
     for (auto& t : song.tracks)
+    {
         for (auto& c : t->clips)
             if (! c.midi)
                 c.audio = loadAudio (c.audioFile);
+        if (t->frozen) t->frozenAudio = loadAudio (t->frozenFile);
+    }
 }
 
 //==============================================================================
@@ -757,19 +789,22 @@ void Engine::addMetronome (juce::int64 segStart, int len, int)
     const bool countingIn = recording && segStart < recordStartSample;
     if (offline || ! playing || ! (song.metronome || countingIn)) return;
 
-    const double bpb = song.beatsPerBar();
-    const double beatUnit = 4.0 / song.sigDen;   // click on each beat of the time signature
     auto* l = master.getWritePointer (0);
     auto* r = master.getWritePointer (1);
+    const double segB0 = samplesToBeats ((double) segStart), segB1 = samplesToBeats ((double) (segStart + len));
+    const double perSample = (segB1 - segB0) / juce::jmax (1, len);
 
     for (int i = 0; i < len; ++i)
     {
-        const double b0 = samplesToBeats ((double) (segStart + i));
-        const double b1 = samplesToBeats ((double) (segStart + i + 1));
-        const double k = std::ceil (b0 / beatUnit) * beatUnit;
+        const double b0 = segB0 + i * perSample;
+        const double b1 = b0 + perSample;
+        // click on each beat of the time signature in force there (it can change along the song)
+        const auto m = song.meterAt (b0);
+        const double beatUnit = 4.0 / m.den;
+        const double k = m.beat + std::ceil ((b0 - m.beat) / beatUnit - 1.0e-9) * beatUnit;
         if (k >= b0 && k < b1)
         {
-            const bool downbeat = std::abs (std::fmod (k, bpb)) < 1.0e-6 || std::abs (std::fmod (k, bpb) - bpb) < 1.0e-6;
+            const bool downbeat = std::abs (song.barStartAtOrBefore (k + 1.0e-7) - k) < 1.0e-6;
             metronomeFreq = downbeat ? 1600.0 : 1050.0;
             metronomeEnv = downbeat ? 1.0 : 0.7;
             metronomePhase = 0.0;
@@ -792,12 +827,12 @@ void Engine::renderSegment (int offset, int len, const float* const* in, int num
     const bool isPlayingNow = playing.load();
 
     PositionInfo info;
-    info.setBpm (song.bpm);
-    info.setTimeSignature (juce::AudioPlayHead::TimeSignature { song.sigNum, song.sigDen });
+    info.setBpm (song.bpmAt (beat0));
+    { const auto m = song.meterAt (beat0); info.setTimeSignature (juce::AudioPlayHead::TimeSignature { m.num, m.den }); }
     info.setTimeInSamples (segStart);
     info.setTimeInSeconds ((double) segStart / sampleRate);
     info.setPpqPosition (beat0);
-    info.setPpqPositionOfLastBarStart (std::floor (beat0 / song.beatsPerBar()) * song.beatsPerBar());
+    info.setPpqPositionOfLastBarStart (song.barStartAtOrBefore (beat0));
     info.setBarCount ((juce::int64) std::floor (beat0 / song.beatsPerBar()));
     info.setIsPlaying (isPlayingNow);
     info.setIsRecording (recording.load());
@@ -850,14 +885,35 @@ void Engine::renderSegment (int offset, int len, const float* const* in, int num
             t.midi.addEvent (juce::MidiMessage::allSoundOff (1), 0);
         }
 
-        if (isPlayingNow)
+        if (freezeCaptureId != 0 && t.id != freezeCaptureId) continue;   // freezing: only that track
+        const bool playFrozen = ! isBus && t.frozen && t.frozenAudio != nullptr;
+        if (playFrozen)
+        {
+            // the rendered audio plays instead of the instrument and its effects
+            if (isPlayingNow)
+            {
+                const auto& fa = *t.frozenAudio;
+                const juce::int64 total = fa.getNumSamples();
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    const auto* src = fa.getReadPointer (juce::jmin (ch, fa.getNumChannels() - 1));
+                    auto* d = view.getWritePointer (ch);
+                    for (int i = 0; i < len; ++i)
+                    {
+                        const juce::int64 k = segStart + i;
+                        d[i] = (k >= 0 && k < total) ? src[k] : 0.0f;
+                    }
+                }
+            }
+        }
+        else if (isPlayingNow)
         {
             if (t.kind == TrackKind::Audio) mixAudioClips (t, segStart, len, view);
             else                            collectMidi (t, beat0, beat1, segStart, len, t.midi);
         }
 
         // Live MIDI (keyboard, on-screen keys) goes to the selected instrument track
-        if (t.id == selected && t.kind != TrackKind::Audio && ! isBus)
+        if (t.id == selected && t.kind != TrackKind::Audio && ! isBus && ! playFrozen)
         {
             for (const auto meta : liveBlock)
             {
@@ -932,7 +988,7 @@ void Engine::renderSegment (int offset, int len, const float* const* in, int num
             }
         }
 
-        if (t.kind != TrackKind::Audio && t.instrument.processor != nullptr && ! t.instrument.bypass)
+        if (t.kind != TrackKind::Audio && t.instrument.processor != nullptr && ! t.instrument.bypass && ! playFrozen)
             processSlot (*t.instrument.processor, view, t.midi);
 
         // automated effect controls: set once per block (only when they change)
@@ -946,10 +1002,19 @@ void Engine::renderSegment (int offset, int len, const float* const* in, int num
             if (std::abs (v - lane.lastApplied) > 1.0e-4f) { params[lane.b]->setValue (v); lane.lastApplied = v; }
         }
 
-        for (auto& s : t.inserts)
-            if (s.processor != nullptr && ! s.bypass)
-                processSlot (*s.processor, view, emptyMidi);
+        if (! playFrozen)
+            for (auto& s : t.inserts)
+                if (s.processor != nullptr && ! s.bypass)
+                    processSlot (*s.processor, view, emptyMidi);
         emptyMidi.clear();
+
+        if (freezeCapture != nullptr && t.id == freezeCaptureId)
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const juce::int64 at = segStart;
+                const int n = (int) juce::jlimit<juce::int64> (0, len, freezeCapture->getNumSamples() - at);
+                if (at >= 0 && n > 0) freezeCapture->copyFrom (ch, (int) at, view, ch, 0, n);
+            }
 
         // Plugin delay compensation: hold back the tracks whose plugins are faster than the slowest one
         if (! isBus && maxTrackLatency > 0 && t.delayLine.getNumSamples() > len)
@@ -1110,7 +1175,7 @@ void Engine::renderSegment (int offset, int len, const float* const* in, int num
 //==============================================================================
 double Engine::getPositionBeats() const noexcept
 {
-    return (double) position.load() / sampleRate * song.bpm / 60.0;
+    return samplesToBeats ((double) position.load());
 }
 
 bool Engine::isCountingIn() const noexcept
@@ -1261,7 +1326,7 @@ juce::Result Engine::record()
         position = (juce::int64) beatsToSamples (song.cycleStart);
     recordStartSample = position.load();
     if (song.countIn && ! playing)
-        position = recordStartSample - (juce::int64) beatsToSamples (song.beatsPerBar());
+        position = (juce::int64) beatsToSamples (samplesToBeats ((double) recordStartSample) - song.beatsPerBarAt (samplesToBeats ((double) recordStartSample)));
     recording = true;
     playing = true;
     return juce::Result::ok();
@@ -1363,13 +1428,13 @@ void Engine::finishRecording()
         c.audio = buffer;
         c.offsetSamples = comp;      // latency compensation: the audio arrived late, so start later in the file
         c.start = startBeat;
-        c.length = samplesToBeats ((double) (buffer->getNumSamples() - comp));
+        c.length = beatsFor (c.start, (double) (buffer->getNumSamples() - comp));
         c.sourceBpm = song.bpm;
 
         if (wasCycle)
         {
             // One file, several passes: each pass is a take of the same region
-            const auto passLen = (juce::int64) beatsToSamples (song.cycleEnd - song.cycleStart);
+            const auto passLen = (juce::int64) samplesFor (song.cycleStart, song.cycleEnd - song.cycleStart);
             const auto usable = (juce::int64) buffer->getNumSamples() - comp;
             int passes = (int) (usable / passLen);
             if (usable - passes * passLen > passLen / 4) ++passes;   // keep a last pass if it got going
@@ -1405,7 +1470,7 @@ void Engine::finishRecording()
                 const double cut = c.end() - old.start;
                 tail.start = c.end();
                 tail.length = old.end() - c.end();
-                tail.offsetSamples = old.offsetSamples + (juce::int64) beatsToSamples (cut);
+                tail.offsetSamples = old.offsetSamples + (juce::int64) samplesFor (old.start, cut);
                 kept.push_back (tail);
             }
         }
@@ -1854,15 +1919,15 @@ void Engine::regenerateDrummer (Track& t, int onlyClipId)
             if (follow->kind == TrackKind::Audio)
             {
                 // Listen to the recording under this region
-                const int n = (int) beatsToSamples (c.length);
+                const int n = (int) samplesFor (c.start, c.length);
                 std::vector<float> mono ((size_t) juce::jmax (0, n), 0.0f);
                 bool any = false;
                 for (auto& fc : follow->clips)
                 {
                     if (fc.midi || fc.audio == nullptr || fc.end() <= c.start || fc.start >= c.end()) continue;
                     const auto& buf = *fc.audio;
-                    const juce::int64 clipAt = (juce::int64) beatsToSamples (fc.start - c.start);   // where the clip starts, from the region start
-                    const juce::int64 clipLen = (juce::int64) beatsToSamples (fc.length);
+                    const juce::int64 clipAt = (juce::int64) (beatsToSamples (fc.start) - beatsToSamples (c.start));   // where the clip starts, from the region start
+                    const juce::int64 clipLen = (juce::int64) samplesFor (fc.start, fc.length);
                     const float g = juce::Decibels::decibelsToGain (fc.gainDb) / (float) juce::jmax (1, buf.getNumChannels());
                     for (juce::int64 i = std::max<juce::int64> (0, clipAt); i < std::min<juce::int64> (n, clipAt + clipLen); ++i)
                     {
@@ -1875,7 +1940,7 @@ void Engine::regenerateDrummer (Track& t, int onlyClipId)
                     }
                 }
                 if (any)
-                    analyseFollowAudio (mono.data(), n, sampleRate, beatsToSamples (1.0), bpb, r.followSteps, r.followBarEnergy);
+                    analyseFollowAudio (mono.data(), n, sampleRate, sampleRate * 60.0 / song.bpmAt (c.start), bpb, r.followSteps, r.followBarEnergy);
             }
             else
             {
@@ -2030,8 +2095,8 @@ juce::Result Engine::importAudio (int trackId, const juce::File& file, double at
     c.audioFile = dest.getFileName();
     c.audio = buffer;
     c.start = juce::jmax (0.0, atBeat);
-    c.length = samplesToBeats ((double) buffer->getNumSamples());
-    c.sourceBpm = song.bpm;
+    c.length = beatsFor (c.start, (double) buffer->getNumSamples());
+    c.sourceBpm = song.bpmAt (c.start);
     addClip (*t, std::move (c));
     return juce::Result::ok();
 }
@@ -2215,7 +2280,7 @@ int Engine::recoverLostRecordings (const juce::StringArray& files)
         c.audioFile = name;
         c.audio = buffer;
         c.start = 0;
-        c.length = samplesToBeats ((double) buffer->getNumSamples());
+        c.length = beatsFor (0.0, (double) buffer->getNumSamples());
         c.sourceBpm = song.bpm;
         addClip (*t, std::move (c));
         ++recovered;
@@ -2236,7 +2301,7 @@ juce::Result Engine::detectChords (int trackId, int clipId)
 {
     std::vector<analysis::BeatChroma> chroma;
     double from = 0.0, to = 0.0;
-    const double spb = beatsToSamples (1.0);
+    const double spb = sampleRate * 60.0 / song.bpm;   // chords are found beat by beat at the song's first tempo
 
     auto fromAudio = [&] (const juce::AudioBuffer<float>& buf, juce::int64 offset, int n)
     {
@@ -2272,7 +2337,7 @@ juce::Result Engine::detectChords (int trackId, int clipId)
         else
         {
             if (c->audio == nullptr) return juce::Result::fail ("La región no tiene audio cargado");
-            fromAudio (*c->audio, std::max<juce::int64> (0, c->offsetSamples), (int) beatsToSamples (c->length));
+            fromAudio (*c->audio, std::max<juce::int64> (0, c->offsetSamples), (int) samplesFor (c->start, c->length));
         }
     }
     else
@@ -2375,7 +2440,7 @@ Engine::FlexPlan Engine::planFlex (const Clip& c, const FlexSettings& f, FlexSou
 {
     FlexPlan plan;
     plan.srcLen = src.audio.getNumSamples();
-    const double ratio = f.followTempo ? f.sourceBpm / song.bpm : 1.0;
+    const double ratio = f.followTempo ? f.sourceBpm / song.bpmAt (c.start) : 1.0;
     plan.outLen = (int) std::llround (plan.srcLen * ratio);
 
     // Time: the whole region scales with the tempo; each hit moves towards the grid
@@ -2387,9 +2452,9 @@ Engine::FlexPlan Engine::planFlex (const Clip& c, const FlexSettings& f, FlexSou
         {
             const double s = t * sampleRate;
             const double o = s * ratio;
-            const double beat = c.start + samplesToBeats (o);
+            const double beat = c.start + beatsFor (c.start, o);
             const double target = std::round (beat / f.quantizeGrid) * f.quantizeGrid;
-            const double oTarget = beatsToSamples (target - c.start);
+            const double oTarget = samplesFor (c.start, target - c.start);
             const double oNew = o + f.quantizeStrength * (oTarget - o);
             if (s <= plan.map.back().first + minGap || oNew <= plan.map.back().second + minGap) continue;
             if (oNew >= plan.outLen - minGap || s >= plan.srcLen - minGap) continue;
@@ -2450,7 +2515,7 @@ juce::var Engine::flexAnalyze (int trackId, int clipId)
     auto plan = planFlex (*c, f, *src);
 
     auto* o = new juce::DynamicObject();
-    auto toBeat = [&] (double sourceSeconds) { return samplesToBeats (flex::mapForward (plan.map, sourceSeconds * sampleRate)); };
+    auto toBeat = [&] (double sourceSeconds) { return beatsFor (c->start, flex::mapForward (plan.map, sourceSeconds * sampleRate)); };
     juce::Array<juce::var> notes, curve, hits;
     for (size_t i = 0; i < src->notes.size(); ++i)
     {
@@ -2521,7 +2586,7 @@ juce::Result Engine::flexApply (int trackId, int clipId, const juce::var& settin
     c->audioFile = dest.getFileName();
     c->audio = audio;
     c->offsetSamples = 0;
-    c->length = samplesToBeats ((double) plan.outLen);
+    c->length = beatsFor (c->start, (double) plan.outLen);
     if (! c->takes.empty() && c->activeTake < (int) c->takes.size())
         c->takes[(size_t) c->activeTake] = { c->audioFile, 0 };
     dirty = true;
@@ -2588,6 +2653,71 @@ void Engine::endOffline (juce::int64 savedPos)
     offlineBusy = false;
 }
 
+juce::Result Engine::freezeTrack (int trackId, bool on)
+{
+    auto* t = song.findTrack (trackId);
+    if (t == nullptr || t->kind == TrackKind::Bus) return juce::Result::fail (juce::String (u8"Esa pista no se puede congelar"));
+    if (! on)
+    {
+        {
+            const juce::ScopedLock sl (lock);
+            t->frozen = false;
+            t->frozenAudio.reset();
+            t->needsAllNotesOff = true;
+        }
+        if (t->frozenFile.isNotEmpty()) getAudioFolder().getChildFile (t->frozenFile).deleteFile();
+        t->frozenFile = {};
+        dirty = true;
+        return juce::Result::ok();
+    }
+    double end = 0;
+    for (auto& c : t->clips) end = juce::jmax (end, c.end());
+    if (end <= 0) return juce::Result::fail (juce::String (u8"La pista está vacía: no hay nada para congelar"));
+
+    const auto total = (int) std::ceil (beatsToSamples (end) + sampleRate * 3.0);   // + the tails (reverb, release)
+    auto capture = std::make_shared<juce::AudioBuffer<float>> (2, total);
+    capture->clear();
+    const bool cycle = song.cycle;
+    {
+        const juce::ScopedLock sl (lock);
+        t->frozen = false;
+        t->frozenAudio.reset();
+        freezeCaptureId = trackId;
+        freezeCapture = capture.get();
+        song.cycle = false;
+    }
+    const auto savedPos = beginOffline (0.0);
+    juce::AudioBuffer<float> block (2, blockSize);
+    for (int done = 0; done < total; done += blockSize)
+        renderOffline (block, juce::jmin (blockSize, total - done));
+    endOffline (savedPos);
+    {
+        const juce::ScopedLock sl (lock);
+        freezeCaptureId = 0;
+        freezeCapture = nullptr;
+        song.cycle = cycle;
+    }
+
+    // keep it with the song, so it opens frozen next time
+    getAudioFolder().createDirectory();
+    if (t->frozenFile.isNotEmpty()) getAudioFolder().getChildFile (t->frozenFile).deleteFile();
+    auto file = getAudioFolder().getNonexistentChildFile (juce::File::createLegalFileName (juce::String (u8"Congelada - ") + t->name), ".wav", false);
+    {
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::FileOutputStream> (file);
+        auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}.withSampleRate (sampleRate).withNumChannels (2).withBitsPerSample (24));
+        if (writer == nullptr) return juce::Result::fail ("No se pudo crear " + file.getFullPathName());
+        writer->writeFromAudioSampleBuffer (*capture, 0, total);
+    }
+    const juce::ScopedLock sl (lock);
+    t->frozenFile = file.getFileName();
+    t->frozenAudio = capture;
+    t->frozen = true;
+    t->needsAllNotesOff = true;
+    dirty = true;
+    return juce::Result::ok();
+}
+
 juce::AudioBuffer<float> Engine::renderRange (double startBeat, double endBeat, const std::function<bool (const Track&)>& include)
 {
     // Leave out what isn't wanted by muting it for the render (and putting the mutes back after)
@@ -2607,7 +2737,7 @@ juce::AudioBuffer<float> Engine::renderRange (double startBeat, double endBeat, 
     song.limiter = false;
     const auto savedPos = beginOffline (startBeat);
     juce::AudioBuffer<float> out;
-    renderOffline (out, (int) std::ceil (beatsToSamples (juce::jmax (0.0, endBeat - startBeat))));
+    renderOffline (out, (int) std::ceil (beatsToSamples (juce::jmax (startBeat, endBeat)) - beatsToSamples (startBeat)));
     endOffline (savedPos);
     song.limiter = lim;
     const juce::ScopedLock sl (lock);
@@ -2658,7 +2788,7 @@ juce::Result Engine::exportMix (const juce::File& file, int bitDepth, double sta
     }
     else
     {
-        const auto total = (juce::int64) beatsToSamples (endBeat - startBeat) + (juce::int64) (sampleRate * 2.0);  // + 2 s of tails
+        const auto total = (juce::int64) (beatsToSamples (endBeat) - beatsToSamples (startBeat)) + (juce::int64) (sampleRate * 2.0);  // + 2 s of tails
         juce::AudioBuffer<float> block (2, blockSize);
         juce::int64 done = 0;
         while (done < total)
@@ -2689,6 +2819,8 @@ juce::var Engine::snapshot() const
     o->setProperty ("minor", song.minor);
     o->setProperty ("chords", chordsToVar (song.chords));
     o->setProperty ("sections", sectionsToVar (song.sections));
+    o->setProperty ("tempoChanges", tempoChangesToVar (song.tempoChanges));
+    o->setProperty ("meterChanges", meterChangesToVar (song.meterChanges));
     juce::Array<juce::var> tracks;
     for (auto& t : song.tracks)
     {
@@ -2766,6 +2898,8 @@ void Engine::restore (const juce::var& v)
     song.minor = (bool) getOrDefault (v, "minor", song.minor);
     if (auto cv = getOrDefault (v, "chords", {}); cv.isArray()) song.chords = chordsFromVar (cv);
     song.sections = sectionsFromVar (getOrDefault (v, "sections", {}));
+    song.tempoChanges = tempoChangesFromVar (getOrDefault (v, "tempoChanges", {}));
+    song.meterChanges = meterChangesFromVar (getOrDefault (v, "meterChanges", {}));
     if (auto* tracks = getOrDefault (v, "tracks", {}).getArray())
         for (auto& tv : *tracks)
             if (auto* t = song.findTrack ((int) getOrDefault (tv, "id", 0)))

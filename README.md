@@ -29,6 +29,11 @@ Versión actual: **0.15**. Galpon está en español y en inglés (Configuración
 - **Batería acústica real**: con un clic baja una batería grabada con varios micrófonos (CC0) y el baterista la usa en lugar de la sintetizada.
 - **Loops** que siguen el tempo y el tono, **editor de notas**, **teclado en pantalla** y teclados MIDI.
 - **Automatización** de volumen, paneo, envíos y cualquier control de efecto, dibujada o grabada.
+- **Cambios de tempo y de compás** a lo largo de la canción: clic derecho en la regla («Cambiar el tempo desde acá…», «Cambiar el compás desde acá…»). La regla, la grilla, el metrónomo, la cuenta, los plugins y la pantalla de arriba siguen cada cambio.
+- **Pista de arreglo**: arrastra una parte (estrofa, estribillo…) y se mueve con todo lo que suena en todas las pistas; también duplicarla o borrarla con su música (⌥ mueve solo la marca).
+- **Carpetas de pistas** (como las Track Stacks): agrupa pistas en una carpeta que se abre y se cierra, con un volumen, silencio y solo para todas.
+- **Congelar pistas**: calcula una vez el instrumento y sus efectos y reproduce eso, para que no gaste procesador. Se guarda con la canción.
+- **Pista de video**: elige una película (.mov, .mp4) y se ve en su ventana, sincronizada con la canción, para musicalizar. Se mueve en el tiempo y puedes importar su sonido a una pista.
 - **Mezclador** con envíos y buses, y limitador en el master.
 - **Identificar acordes** de audio o MIDI, en una pista de acordes editable.
 - **Flex**: afinar voces (automático o nota por nota), cuantizar audio y seguir cambios de tempo, sin perder la grabación original.

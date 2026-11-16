@@ -55,6 +55,95 @@ int Song::indexOfTrack (int trackId) const
     return -1;
 }
 
+double Song::bpmAt (double beat) const noexcept
+{
+    double bpmNow = bpm;
+    for (auto& t : tempoChanges) { if (t.beat > beat) break; bpmNow = t.bpm; }
+    return bpmNow;
+}
+
+double Song::secondsAt (double beat) const noexcept
+{
+    // before 0 (a count-in) at the first tempo
+    double sec = 0.0, from = 0.0, bpmNow = bpm;
+    if (beat <= 0.0) return beat * 60.0 / bpm;
+    for (auto& t : tempoChanges)
+    {
+        if (t.beat >= beat) break;
+        sec += (t.beat - from) * 60.0 / bpmNow;
+        from = t.beat; bpmNow = t.bpm;
+    }
+    return sec + (beat - from) * 60.0 / bpmNow;
+}
+
+double Song::beatAtSeconds (double seconds) const noexcept
+{
+    if (seconds <= 0.0) return seconds * bpm / 60.0;
+    double sec = 0.0, from = 0.0, bpmNow = bpm;
+    for (auto& t : tempoChanges)
+    {
+        const double segSec = (t.beat - from) * 60.0 / bpmNow;
+        if (sec + segSec >= seconds) break;
+        sec += segSec; from = t.beat; bpmNow = t.bpm;
+    }
+    return from + (seconds - sec) * bpmNow / 60.0;
+}
+
+MeterChange Song::meterAt (double beat) const noexcept
+{
+    MeterChange m { 0.0, sigNum, sigDen };
+    for (auto& c : meterChanges) { if (c.beat > beat + 1.0e-9) break; m = c; }
+    return m;
+}
+
+double Song::barStartAtOrBefore (double beat) const noexcept
+{
+    const auto m = meterAt (beat);
+    const double bpb = m.num * 4.0 / m.den;
+    if (beat < 0.0) return std::floor (beat / (sigNum * 4.0 / sigDen)) * (sigNum * 4.0 / sigDen);
+    return m.beat + std::floor ((beat - m.beat) / bpb + 1.0e-9) * bpb;
+}
+
+void Song::sortTimeChanges()
+{
+    std::sort (tempoChanges.begin(), tempoChanges.end(), [] (auto& a, auto& b) { return a.beat < b.beat; });
+    std::sort (meterChanges.begin(), meterChanges.end(), [] (auto& a, auto& b) { return a.beat < b.beat; });
+    // one change per place, nothing at 0 (that's the song's own tempo and meter)
+    tempoChanges.erase (std::remove_if (tempoChanges.begin(), tempoChanges.end(), [] (auto& t) { return t.beat <= 1.0e-6; }), tempoChanges.end());
+    meterChanges.erase (std::remove_if (meterChanges.begin(), meterChanges.end(), [] (auto& m) { return m.beat <= 1.0e-6; }), meterChanges.end());
+    tempoChanges.erase (std::unique (tempoChanges.begin(), tempoChanges.end(), [] (auto& a, auto& b) { return std::abs (a.beat - b.beat) < 1.0e-6; }), tempoChanges.end());
+    meterChanges.erase (std::unique (meterChanges.begin(), meterChanges.end(), [] (auto& a, auto& b) { return std::abs (a.beat - b.beat) < 1.0e-6; }), meterChanges.end());
+}
+
+juce::var tempoChangesToVar (const std::vector<TempoChange>& list)
+{
+    juce::Array<juce::var> a;
+    for (auto& t : list) { auto* o = new juce::DynamicObject(); o->setProperty ("beat", t.beat); o->setProperty ("bpm", t.bpm); a.add (juce::var (o)); }
+    return a;
+}
+std::vector<TempoChange> tempoChangesFromVar (const juce::var& v)
+{
+    std::vector<TempoChange> out;
+    if (auto* a = v.getArray())
+        for (auto& x : *a)
+            out.push_back ({ (double) getOrDefault (x, "beat", 0.0), juce::jlimit (20.0, 400.0, (double) getOrDefault (x, "bpm", 120.0)) });
+    return out;
+}
+juce::var meterChangesToVar (const std::vector<MeterChange>& list)
+{
+    juce::Array<juce::var> a;
+    for (auto& m : list) { auto* o = new juce::DynamicObject(); o->setProperty ("beat", m.beat); o->setProperty ("num", m.num); o->setProperty ("den", m.den); a.add (juce::var (o)); }
+    return a;
+}
+std::vector<MeterChange> meterChangesFromVar (const juce::var& v)
+{
+    std::vector<MeterChange> out;
+    if (auto* a = v.getArray())
+        for (auto& x : *a)
+            out.push_back ({ (double) getOrDefault (x, "beat", 0.0), juce::jlimit (1, 32, (int) getOrDefault (x, "num", 4)), juce::jlimit (1, 32, (int) getOrDefault (x, "den", 4)) });
+    return out;
+}
+
 double Song::lengthInBeats() const
 {
     double end = 0.0;

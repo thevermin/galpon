@@ -47,6 +47,8 @@
 
   let chords = [];
   let sections = [{ beat: 0, length: 16, kind: 'intro' }, { beat: 16, length: 32, kind: 'verse' }];
+  let video = null;
+  song.tempoChanges = []; song.meterChanges = [];
   const sectionKinds = [['intro', 'Intro'], ['verse', 'Estrofa'], ['prechorus', 'Pre-estribillo'], ['chorus', 'Estribillo'], ['bridge', 'Puente'], ['solo', 'Solo'], ['outro', 'Final']];
   function track(id) { return tracks.find((t) => t.id === id); }
   const PLAN = [['intro', 'Intro', 1], ['verse', 'Estrofa', 2], ['chorus', 'Estribillo', 2], ['verse', 'Estrofa', 2], ['chorus', 'Estribillo', 2], ['bridge', 'Puente', 2], ['chorus', 'Estribillo', 2], ['outro', 'Final', 1]];
@@ -91,7 +93,7 @@
     const copy = JSON.parse(JSON.stringify(tracks));
     const audio = copy.find((t) => t.kind === 'audio');
     copy.forEach((t) => { if (t.kind === 'drummer' && audio && t.drummer.followTrack !== 0) t.listensTo = [audio.id, audio.name, true]; });
-    return { song: Object.assign({}, song, { length }), tracks: copy, chords: JSON.parse(JSON.stringify(chords)), sections: JSON.parse(JSON.stringify(sections)), sectionKinds, master: [], selected, folder: '/Users/demo/Music/Galpon/Prueba.galpon', dirty: true, sampleRate: 48000, version };
+    return { song: Object.assign({}, song, { length }), tracks: copy, chords: JSON.parse(JSON.stringify(chords)), sections: JSON.parse(JSON.stringify(sections)), sectionKinds, video: video ? Object.assign({ exists: true }, video) : null, master: [], selected, folder: '/Users/demo/Music/Galpon/Prueba.galpon', dirty: true, sampleRate: 48000, version };
   }
 
   const ok = (data) => ({ ok: true, data });
@@ -199,6 +201,28 @@
         case 'setPosition': beat = a.beat; return ok();
         case 'selectTrack': selected = a.id; return ok();
         case 'setSong': Object.assign(song, a); return changed();
+        case 'setTempoChange': {
+          if (a.beat <= 0) { if (a.bpm > 0) song.bpm = a.bpm; return changed(); }
+          song.tempoChanges = song.tempoChanges.filter((x) => Math.abs(x.beat - a.beat) > 1e-6);
+          if (a.bpm > 0) song.tempoChanges.push({ beat: a.beat, bpm: a.bpm });
+          song.tempoChanges.sort((x, y) => x.beat - y.beat); return changed();
+        }
+        case 'setMeterChange': {
+          song.meterChanges = song.meterChanges.filter((x) => Math.abs(x.beat - a.beat) > 1e-6);
+          if (a.num > 0) song.meterChanges.push({ beat: a.beat, num: a.num, den: a.den });
+          song.meterChanges.sort((x, y) => x.beat - y.beat); return changed();
+        }
+        case 'setVideo': {
+          if ('file' in a) video = a.file ? { file: a.file, name: a.file.split('/').pop(), start: 0, duration: 95 } : null;
+          if (video && 'start' in a) video.start = a.start;
+          return changed();
+        }
+        case 'showVideo': return ok();
+        case 'makeStack': { const b = addTrack('bus', 'none'); b.name = a.name || 'Carpeta'; b.stack = true; b.stackOpen = true; b.inserts = []; tracks.splice(tracks.indexOf(b), 1); tracks.splice(tracks.indexOf(t), 0, b); t.output = b.id; return changed(b.id); }
+        case 'addToStack': t.output = a.stackId; return changed();
+        case 'unstack': tracks.forEach((o) => { if (o.output === t.id) o.output = 0; }); tracks.splice(tracks.indexOf(t), 1); return changed();
+        case 'freezeTrack': t.frozen = !!a.on; return changed();
+        case 'arrangeSection': return changed();
         case 'detectChords': {
           const N = ['Do', 'Lam', 'Fa', 'Sol7'], E = ['C', 'Am', 'F', 'G7'];
           chords = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ beat: i * 4, length: 4, root: [0, 9, 5, 7][i % 4], quality: [0, 1, 0, 2][i % 4], name: N[i % 4], en: E[i % 4] }));
