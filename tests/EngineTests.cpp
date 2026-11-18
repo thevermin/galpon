@@ -2835,6 +2835,7 @@ static void testLessonExercise()
     const auto args = juce::JSON::parse (R"({"length":6,"data":{"arrangements":{"leccion":{"name":"Lección","notes":[{"t":2.0,"s":0,"f":0}]}}},
         "clicks":[{"t":0,"a":true},{"t":0.5,"a":false}],"drums":[{"t":2,"k":"k"},{"t":2.5,"k":"s"},{"t":2.25,"k":"h"}],
         "guide":[{"t":2.0,"p":[40],"d":0.8},{"t":3.0,"p":[40,47,52],"d":0.8,"m":false}]})");
+    CHECK ((bool) t.api.call ("gameGuitar", {})["ok"], "la pista de guitarra se puede pedir sin canción abierta (lecciones)");
     auto r = t.api.call ("gameOpenLesson", args);
     CHECK ((bool) r["ok"], "abre el ejercicio (" << r["error"].toString() << ")");
     CHECK (r["data"]["stems"].size() == 3, "trae click, batería y guía (" << r["data"]["stems"].size() << ")");

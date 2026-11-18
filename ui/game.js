@@ -96,11 +96,12 @@
   /** The tabs on top of the library and the lessons: songs | lessons. */
   Game.tabs = function (which) {
     return el('div.seg.g-tabs', { role: 'group', 'aria-label': 'Juego' },
-      el('button' + (which === 'songs' ? '.on' : ''), { 'aria-pressed': String(which === 'songs'), onclick: () => { if (which !== 'songs') Game.showLibrary(); } }, 'Canciones'),
-      el('button' + (which === 'lessons' ? '.on' : ''), { 'aria-pressed': String(which === 'lessons'), onclick: () => { if (which !== 'lessons') { store.set('tab', 'lessons'); G.Lessons.show(root); } } }, 'Lecciones'));
+      el('button' + (which === 'songs' ? '.on' : ''), { 'aria-pressed': String(which === 'songs'), onclick: () => { if (which !== 'songs') Game.showLibrary(); } }, G.lang === 'en' ? 'Songs' : 'Canciones'),
+      el('button' + (which === 'lessons' ? '.on' : ''), { 'aria-pressed': String(which === 'lessons'), onclick: () => { if (which !== 'lessons') { store.set('tab', 'lessons'); G.Lessons.show(root); } } }, G.lang === 'en' ? 'Lessons' : 'Lecciones'));
   };
   Game.leave = function () {
     if (play) G.call('gamePause');
+    if (G.Lessons && G.Lessons.stopAll) G.Lessons.stopAll();
     Game.active = false;
     document.body.classList.remove('in-game');
     if (root) root.classList.add('hidden');
@@ -1133,7 +1134,7 @@
     await G.call('gameClose');
     const lesson = play && play.lesson;
     play = null;
-    if (lesson && G.Lessons) G.Lessons.show(root, lesson.lessonId); else showLibrary();
+    if (lesson && G.Lessons) G.Lessons.backTo(lesson.lessonId); else showLibrary();
   }
 
   // ------------------------------------------------------------------ clock: smooth position between ticks

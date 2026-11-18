@@ -73,11 +73,17 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 
 ### Lecciones de guitarra
 
-En el modo Juego, la pestaña **Lecciones**: 35 lecciones cortas en 10 unidades, desde las cuerdas al aire hasta cejillas y Travis picking, pasando por notas del diapasón, acordes abiertos, rasgueos, intervalos, escala mayor, pentatónica y blues, armonía (grados, progresiones, relativos, capo), power chords, palm mute, ligados, slides y bends.
+En el modo Juego, la pestaña **Lecciones** (en español y en inglés): 37 lecciones cortas en 10 unidades, desde las cuerdas al aire hasta cejillas y Travis picking, pasando por notas del diapasón, acordes abiertos, rasgueos, intervalos, escala mayor, pentatónica y blues, improvisación, armonía (grados, progresiones, relativos, capo), power chords, palm mute, ligados, slides y bends.
 
-- Teoría corta que **se escucha**: diagramas de acordes, del mástil y tablaturas que suenan con un clic.
-- **Preguntas** al final de cada tema, y juegos que cambian cada vez: adivinar notas en el mástil y reconocer intervalos de oído.
-- **57 ejercicios** que se tocan en la autopista, con click, batería y una guitarra guía. Galpon te escucha y da hasta 3 estrellas; si cuesta, te ofrece bajar la velocidad.
+- Teoría corta que **se escucha**: diagramas de acordes, del mástil y tablaturas que suenan con un clic, y preguntas al final de cada tema.
+- **57 ejercicios** en la autopista, con click, batería y una guitarra guía. Galpon te escucha y da hasta 3 estrellas; si cuesta, te ofrece bajar la velocidad.
+- **Práctica** con niveles y modo eterno (lo que más te cuesta aparece más seguido):
+  - **Encuentra la nota**: te pide una nota en una cuerda, la tocas y te dice si caíste o cuántos trastes te faltan.
+  - **¿Qué nota es?**: un punto en el mástil y eliges su nombre.
+  - **Intervalos y acordes de oído**.
+  - **Bends afinados**: una aguja en vivo te muestra si te falta o te pasas.
+  - **Improvisación libre** sobre 5 bases en loop, con la escala en el mástil y tus notas iluminadas mientras tocas.
+  - **Cambios de acordes** a tiempo, cada vez más rápido.
 - El progreso queda guardado y la portada te dice por dónde seguir.
 
 ## Atajos

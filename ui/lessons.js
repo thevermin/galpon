@@ -9,7 +9,12 @@
   const OPEN = [40, 45, 50, 55, 59, 64];            // E2 A2 D3 G3 B3 E4: string 6 … string 1
   const ES = ['Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];
   const EN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-  const both = (pc) => `${ES[pc % 12]} (${EN[pc % 12]})`;
+  // language: the lessons carry their own English (lessons_en.js); generated text uses L2
+  const isEn = () => G.lang === 'en';
+  const tr = (s) => (isEn() && G.LessonsEN && G.LessonsEN[s]) || s;
+  const L2 = (es, en) => (isEn() ? en : es);
+  const noteName = (pc) => (isEn() ? EN[pc % 12] : `${ES[pc % 12]} (${EN[pc % 12]})`);
+  const noteShort = (pc) => (isEn() ? EN[pc % 12] : ES[pc % 12]);
   const midiOf = (str, fret) => OPEN[6 - str] + fret;     // str: 6 = low E … 1 = high E
 
   // chord shapes: frets from string 6 to string 1 (-1 = don't play it), and fingers
@@ -167,9 +172,9 @@
           drums.push({ t: b * spb, k: 'h' });
         }
       }
-    const sections = [{ time: lead * spb, name: title || 'Ejercicio', number: 1 }];
+    const sections = [{ time: lead * spb, name: title || L2('Ejercicio', 'Exercise'), number: 1 }];
     const data = {
-      arrangements: { leccion: { name: 'Lección', type: 'guitar', tuning: [0, 0, 0, 0, 0, 0], notes, chords, templates, anchors } },
+      arrangements: { leccion: { name: L2('Lección', 'Lesson'), type: 'guitar', tuning: [0, 0, 0, 0, 0, 0], notes, chords, templates, anchors } },
       beats: beatList, sections, lyrics: [],
     };
     return { data, audio: { length: endBeat * spb + 2, clicks, drums, guide }, guide, spb, lead };
@@ -286,14 +291,24 @@
     if (12 >= from && 12 <= to) { s.appendChild(svg('circle', { cx: fx(12), cy: y0 + dy * 1.5, r: 5, fill: '#5a4d3c' })); s.appendChild(svg('circle', { cx: fx(12), cy: y0 + dy * 3.5, r: 5, fill: '#5a4d3c' })); }
     for (let i = 0; i < 6; i++) {
       const str = i + 1, y = y0 + i * dy;
-      s.appendChild(svg('line', { x1: x0, x2: W - 10, y1: y, y2: y, stroke: strColour(str), 'stroke-width': 1 + i * 0.35, opacity: 0.8 }));
+      if (cfg.hl === str) s.appendChild(svg('rect', { x: x0, y: y - 9, width: W - x0 - 10, height: 18, fill: strColour(str), opacity: 0.18 }));
+      s.appendChild(svg('line', { x1: x0, x2: W - 10, y1: y, y2: y, stroke: strColour(str), 'stroke-width': (1 + i * 0.35) * (cfg.hl === str ? 1.8 : 1), opacity: cfg.hl && cfg.hl !== str ? 0.35 : 0.8 }));
       s.appendChild(svg('text', { x: 12, y: y + 4, 'font-size': 11, fill: '#999' }, String(str)));
     }
     for (let f = Math.max(from, 1); f <= to; f++) s.appendChild(svg('text', { x: fx(f), y: H - 4, 'text-anchor': 'middle', 'font-size': 10, fill: '#777' }, String(f)));
+    if (cfg.onPick)   // click a fret (for when there's no guitar at hand)
+      for (let i = 0; i < 6; i++) for (let f = from; f <= to; f++) {
+        const r = svg('rect', { x: fx(f) - fw / 2, y: y0 + i * dy - dy / 2, width: fw, height: dy, fill: 'transparent', class: 'l-pick' });
+        r.addEventListener('click', () => cfg.onPick(i + 1, f));
+        s.appendChild(r);
+      }
     for (const m of cfg.marks || []) {
       const x = fx(m.f), y = y0 + (m.s - 1) * dy;
-      const g = svg('g', { class: 'l-mark', tabindex: 0, role: 'button', 'aria-label': (m.label || '') + ' cuerda ' + m.s + ' traste ' + m.f });
-      g.appendChild(svg('circle', { cx: x, cy: y, r: 9.5, fill: m.root ? '#ef4444' : m.dim ? '#3b3b44' : strColour(m.s), stroke: '#111', 'stroke-width': 1 }));
+      const g = svg('g', { class: 'l-mark', tabindex: 0, role: 'button', 'aria-label': (m.label || '') + ' · ' + m.s + ' · ' + m.f });
+      if (m.ring) g.appendChild(svg('circle', { cx: x, cy: y, r: 12.5, fill: 'none', stroke: '#f2f2f3', 'stroke-width': 1.5 }));
+      if (m.glow) g.appendChild(svg('circle', { cx: x, cy: y, r: 15, fill: '#4ade80', opacity: 0.35 }));
+      const fill = m.good ? '#4ade80' : m.bad ? '#f87171' : m.root ? '#ef4444' : m.dim ? '#3b3b44' : strColour(m.s);
+      g.appendChild(svg('circle', { cx: x, cy: y, r: 9.5, fill, stroke: m.glow ? '#fff' : '#111', 'stroke-width': m.glow ? 2 : 1 }));
       if (m.label) g.appendChild(svg('text', { x, y: y + 3.5, 'text-anchor': 'middle', 'font-size': m.label.length > 2 ? 7.5 : 9, 'font-weight': 700, fill: m.dim ? '#ddd' : '#111' }, m.label));
       g.addEventListener('click', () => hearNotes([midiOf(m.s, m.f)]));
       s.appendChild(g);
@@ -363,7 +378,7 @@
           { p: 'La **6ª** es la cuerda más gruesa (la más grave) y la **1ª** la más fina (la más aguda). Con la guitarra en las piernas, la 6ª te queda arriba, más cerca de la cara.' },
           { p: 'Al aire, sin apretar nada, suenan: **Mi La Re Sol Si Mi** (en inglés **E A D G B E**). Cántalo un par de veces: «Mi, La, Re, Sol, Si, Mi».' },
           { fret: { to: 5, marks: [6, 5, 4, 3, 2, 1].map((s) => ({ s, f: 0, label: EN[OPEN[6 - s] % 12] })) } },
-          { listen: [6, 5, 4, 3, 2, 1].map((s) => ({ label: `${s}ª · ${ES[OPEN[6 - s] % 12]}`, notes: [midiOf(s, 0)] })) },
+          { listen: [6, 5, 4, 3, 2, 1].map((s) => ({ label: () => L2(`${s}ª · ${ES[OPEN[6 - s] % 12]}`, `String ${s} · ${EN[OPEN[6 - s] % 12]}`), notes: [midiOf(s, 0)] })) },
           { fun: 'Las dos Mi (la 6ª y la 1ª) son la misma nota, una dos octavas más aguda que la otra. Lo que aprendas en una sirve para la otra.' }),
         P('¿Quedó claro?', quiz(
           Q('¿Cuál es la 6ª cuerda?', ['La más fina', 'La más gruesa', 'La del medio'], 1, 'La 6ª es la gruesa: la más grave.'),
@@ -376,7 +391,7 @@
       ] },
       { id: 'l-tab', title: 'Leer tablatura y la autopista', min: 5, pages: [
         P('La tablatura en 30 segundos',
-          { p: 'La **tablatura** (tab) dibuja las 6 cuerdas como 6 líneas. La de **abajo es la 6ª** (la gruesa). Ojo: es al revés de como la ves cuando miras la guitarra desde arriba, como si la guitarra estuviera acostada mirándote.' },
+          { p: 'La **tablatura** (tab) dibuja las 6 cuerdas como 6 líneas. La de **abajo es la 6ª** (la gruesa). Ojo: es al revés de como la ves cuando tocas, mirando hacia abajo (ahí la 6ª te queda arriba).' },
           { p: 'Cada número es **el traste** que aprietas. **0** = al aire. Se lee de izquierda a derecha.' },
           { tab: { seq: '6.0 6.3 6.5 6.3 | 5.0 5.2 5.3 5.2' } },
           { listenSeq: { bpm: 90, seq: '6.0 6.3 6.5 6.3 | 5.0 5.2 5.3 5.2' }, label: 'Escuchar' }),
@@ -418,6 +433,17 @@
           ex('pulso1', 'Negras en Mi', { bpm: 80, drums: 'rock', seq: '6.0 6.0 6.0 6.0 | 6.0 6.0 6.0 6.0 | 5.0 5.0 5.0 5.0 | 6.0 6.0 6.0 6.0', repeat: 2 }),
           ex('pulso2', 'Corcheas', { bpm: 80, drums: 'rock', unit: 0.5, seq: '6.0 6.0 6.0 6.0 6.0 6.0 6.0 6.0 | 5.0 5.0 5.0 5.0 5.0 5.0 5.0 5.0 | 4.0 4.0 4.0 4.0 4.0 4.0 4.0 4.0 | 5.0 5.0 5.0 5.0 6.0:2', repeat: 2 }, 'Toca en el «1 y 2 y».')),
       ] },
+      { id: 'l-practicar', title: 'Cómo practicar (y avanzar rápido)', min: 4, pages: [
+        P('Poco y seguido',
+          { p: '**20 minutos todos los días** te llevan más lejos que 3 horas el sábado. Los dedos y el cerebro aprenden mientras descansas.' },
+          { p: 'Una rutina simple:' },
+          { p: '**3 min** de calentamiento (la araña) · **5 min** de notas (en Práctica) · **5 min** de cambios de acordes · **el resto, música que te guste.**' },
+          { tip: 'Usa siempre la velocidad que te sale **bien**. Cuando algo sale 3 veces seguidas perfecto, súbele un 10 %.' }),
+        P('Lo que más ayuda', quiz(
+          Q('Algo no te sale a 100 %. ¿Qué haces?', ['Lo repito rápido hasta que salga', 'Lo bajo de velocidad hasta que salga perfecto', 'Lo salteo'], 1, 'Despacio y bien: la velocidad llega sola.'),
+          Q('¿Qué es mejor?', ['2 horas un día por semana', '20 minutos todos los días'], 1, 'Poco y seguido gana siempre.')),
+          { fun: 'En la sección **Práctica** (arriba en la portada de lecciones) hay entrenadores que no se terminan nunca: lo que más te cuesta aparece más seguido.' }),
+      ] },
     ] },
 
     { id: 'u2', title: 'Notas y diapasón', desc: 'Las 12 notas, dónde están y cómo encontrarlas.', lessons: [
@@ -437,6 +463,9 @@
           Q('Dos trastes son…', ['Un semitono', 'Un tono', 'Una octava'], 1, 'Un traste = semitono; dos = un tono.'),
           Q('Fa# es lo mismo que…', ['Solb', 'Fab', 'Sol#'], 0, 'Fa# y Solb suenan igual.'),
           Q('¿Qué letra es Sol?', ['E', 'G', 'A'], 1, 'C D E F G A B = Do Re Mi Fa Sol La Si.'))),
+        P('¿Qué nota es?',
+          { p: 'Te muestro un punto en la 6ª cuerda y eliges su nombre. Cuenta desde el Mi al aire: un traste, un semitono.' },
+          { trainer: 'name', level: 0, count: 6 }),
         P('La escala cromática',
           { p: 'Todas las notas, una por traste, en la 6ª cuerda. Fíjate cómo vuelve a Mi en el 12.' },
           ex('crom1', 'Subir por la 6ª', { bpm: 80, seq: '6.0 6.1 6.2 6.3 | 6.4 6.5 6.6 6.7 | 6.8 6.9 6.10 6.11 | 6.12:4' }),
@@ -451,7 +480,11 @@
           { p: 'En la 5ª: **La 0 · Si 2 · Do 3 · Re 5 · Mi 7 · Fa 8 · Sol 10 · La 12**.' },
           { fret: { to: 12, marks: [[0, 'A'], [2, 'B'], [3, 'C'], [5, 'D'], [7, 'E'], [8, 'F'], [10, 'G'], [12, 'A']].map(([f, l]) => ({ s: 5, f, label: l })) } },
           { tip: 'Usa los puntos del mástil como señales: en la 6ª, **Sol en el 3, La en el 5, Si en el 7**. En la 5ª, **Re en el 5, Mi en el 7**.' }),
-        P('Adivina la nota', { gen: 'fretNote', strings: [6, 5], count: 8 }),
+        P('Adivina la nota', { trainer: 'name', level: 0, count: 5 }, { trainer: 'name', level: 1, count: 5 }),
+        P('Encuéntrala en tu guitarra',
+          { p: 'Ahora al revés: te pido una nota y la buscas **tocando**. Te escucho y te digo si caíste, o cuántos trastes te faltan.' },
+          { tip: 'Sin la guitarra a mano también puedes tocar el traste en el dibujo.' },
+          { trainer: 'find', level: 0, count: 6 }),
         P('Tócalas',
           ex('nat6', 'Naturales en la 6ª', { bpm: 70, seq: '6.0 6.1 6.3 6.5 | 6.7 6.8 6.10 6.12 | 6.10 6.8 6.7 6.5 | 6.3 6.1 6.0:2' }),
           ex('nat5', 'Naturales en la 5ª', { bpm: 70, seq: '5.0 5.2 5.3 5.5 | 5.7 5.8 5.10 5.12 | 5.10 5.8 5.7 5.5 | 5.3 5.2 5.0:2' })),
@@ -479,7 +512,8 @@
           { p: 'En la **4ª** (Re): Re 0 · Mi 2 · Fa 3 · Sol 5 · La 7 · Si 9 · Do 10 · Re 12. En la **3ª** (Sol): Sol 0 · La 2 · Si 4 · Do 5 · Re 7 · Mi 9 · Fa 10 · Sol 12.' },
           { p: 'En la **2ª** (Si): Si 0 · Do 1 · Re 3 · Mi 5 · Fa 6 · Sol 8 · La 10 · Si 12.' },
           { tip: 'Truco: si sabes la 6ª y la 5ª, encuentras cualquier nota con la forma de octava.' }),
-        P('Adivina la nota', { gen: 'fretNote', strings: [4, 3, 2, 1], count: 8 }),
+        P('Adivina la nota', { trainer: 'name', level: 3, count: 5 }, { trainer: 'name', level: 4, count: 5 }),
+        P('Encuéntrala en tu guitarra', { trainer: 'find', level: 3, count: 8 }),
         P('Todos los Do',
           { p: 'Busca todos los **Do (C)** de los primeros 12 trastes. Los de la guitarra completa: 5ª-3, 2ª-1, 4ª-10, 3ª-5, 1ª-8 y 6ª-8.' },
           { fret: { to: 12, marks: [[5, 3], [2, 1], [4, 10], [3, 5], [1, 8], [6, 8]].map(([s, f]) => ({ s, f, label: 'C', root: true })) } },
@@ -497,6 +531,9 @@
           { p: 'Las líneas verticales son las cuerdas (6ª a la izquierda), las horizontales los trastes. El número es **qué dedo** usar. **○** = al aire; **×** = no tocar esa cuerda.' },
           { chords: ['Em', 'E'] },
           { p: 'Mira: entre Em y E cambia **un solo dedo** (el 1 en la 3ª cuerda). Esa nota es la tercera: Sol en Em, Sol# en E.' }),
+        P('¿Mayor o menor?',
+          { p: 'Escucha y decide: ¿luminoso o melancólico? Con práctica lo vas a oír al instante.' },
+          { trainer: 'chordEar', level: 0, count: 6 }),
         P('Una pregunta', quiz(
           Q('¿Qué nota le da el nombre al acorde?', ['La tercera', 'La raíz', 'La quinta'], 1, 'La raíz: en Mi menor, Mi.'),
           Q('¿Qué cambia entre mayor y menor?', ['La raíz', 'La tercera', 'La cantidad de cuerdas'], 1, 'La tercera mayor (4 semitonos) o menor (3).'))),
@@ -599,7 +636,7 @@
         P('Las importantes',
           { p: '**3ª menor y mayor**: deciden si algo suena triste o alegre. **5ª justa**: la base del power chord. **Octava**: la misma nota.' },
           { tip: 'Para entrenar el oído, asocia cada intervalo con el comienzo de una canción que conozcas.' }),
-        P('Entrena el oído', { gen: 'earInterval', count: 6 }),
+        P('Entrena el oído', { trainer: 'ear', level: 0, count: 6 }),
         P('Tócalos',
           ex('int1', 'Desde Do', { bpm: 70, unit: 2, seq: '5.3 5.5 | 5.3 4.2 | 5.3 4.3 | 5.3 4.5 | 5.3 3.5:6' }, 'Do-Re, Do-Mi, Do-Fa, Do-Sol, Do-Do.')),
       ] },
@@ -608,7 +645,7 @@
           { p: 'La escala mayor es la de **Do Re Mi Fa Sol La Si Do**. Lo que la define es el orden de las distancias:' },
           { p: '**Tono · Tono · Semitono · Tono · Tono · Tono · Semitono**' },
           { p: 'Empezando en Do no hace falta ningún #. Empezando en Sol, para respetar la fórmula, aparece un **Fa#**.' },
-          { fun: 'Los nombres Do, Re, Mi… vienen de las primeras sílabas de los versos de un himno en latín del siglo XI. «Do» antes se llamaba «Ut».' }),
+          { fun: 'Los nombres Do, Re, Mi… vienen de las primeras sílabas de los versos de un himno en latín que usó el monje Guido d’Arezzo, en el siglo XI, para enseñar a cantar. «Do» antes se llamaba «Ut».' }),
         P('Sol mayor en el mástil',
           { fret: { from: 0, to: 6, marks: [[6, 3, 'G', 1], [6, 5, 'A'], [5, 2, 'B'], [5, 3, 'C'], [5, 5, 'D'], [4, 2, 'E'], [4, 4, 'F#'], [4, 5, 'G', 1], [3, 2, 'A'], [3, 4, 'B'], [3, 5, 'C'], [2, 3, 'D'], [2, 5, 'E'], [1, 2, 'F#'], [1, 3, 'G', 1]].map(([s, f, label, r]) => ({ s, f, label, root: !!r })) } },
           { p: 'En rojo, las Sol (la raíz). Mano en la zona de los trastes 2 a 5.' },
@@ -624,6 +661,7 @@
           { p: 'Es la famosa **«caja 1»**, en el traste 5. Dedo **1** en el traste 5, dedo **3** (o **4**) en el 7 u 8.' }),
         P('A tocar',
           ex('pen1', 'Subir', { bpm: 70, seq: '6.5 6.8 5.5 5.7 | 4.5 4.7 3.5 3.7 | 2.5 2.8 1.5 1.8 | 1.5:4' }),
+          { jam: 'rock-am' },
           ex('pen2', 'Subir y bajar', { bpm: 85, unit: 0.5, drums: 'rock', seq: '6.5 6.8 5.5 5.7 4.5 4.7 3.5 3.7 | 2.5 2.8 1.5 1.8 1.5 2.8 2.5 3.7 | 3.5 4.7 4.5 5.7 5.5 6.8 6.5:1', repeat: 2 })),
       ] },
       { id: 'l-licks', title: 'Tus primeros licks', min: 7, pages: [
@@ -644,7 +682,28 @@
           { tip: 'No te quedes en la nota azul: pásala de camino a otra.' }),
         P('A tocar',
           ex('blu1', 'Escala de blues', { bpm: 70, seq: '6.5 6.8 5.5 5.6 | 5.7 4.5 4.7 3.5 | 3.7 3.8 2.5 2.8 | 1.5:4' }),
+          { jam: 'blues-a' },
           ex('blu2', 'Lick de blues', { bpm: 80, drums: 'rock', seq: '3.5 3.7 3.8 3.7 | 3.5 4.7:3 | 5.5 5.6 5.7 4.5 | 4.7:4', repeat: 2 })),
+      ] },
+      { id: 'l-improvisar', title: 'Improvisar sin miedo', min: 10, pages: [
+        P('No hay notas equivocadas (casi)',
+          { p: 'Improvisar no es tocar rápido ni saber mil escalas: es **decir algo** con pocas notas. Cinco reglas que funcionan desde el primer día:' },
+          { p: '**1. Pocas notas.** Tres notas bien elegidas dicen más que veinte.' },
+          { p: '**2. Repite.** Toca una idea, repítela, y cámbiala un poquito la tercera vez. El oído ama reconocer.' },
+          { p: '**3. Pregunta y respuesta.** Una frase que queda abierta, otra que cierra.' },
+          { p: '**4. Termina en una nota del acorde.** En la pantalla de improvisar tienen un anillo: son las más seguras para descansar.' },
+          { p: '**5. Deja silencio.** Respirar entre frases es lo que más diferencia a un principiante de alguien que suena musical.' }),
+        P('Mayor y menor con la misma forma',
+          { p: 'La pentatónica de **Mi menor** y la pentatónica de **Sol mayor** tienen **las mismas notas** (son relativas). Lo que cambia es la nota donde descansas: sobre una base en Sol, volver a Sol suena alegre.' },
+          { jam: 'balada-em' },
+          { jam: 'pop-g' }),
+        P('Un sabor nuevo: el modo dórico',
+          { p: 'El **dórico** es una escala menor con la sexta mayor. Suena menos triste, más «cool»: funk, jazz, rock latino. En Re dórico esa nota especial es **Si (B)**.' },
+          { jam: 'groove-dm' },
+          { fun: 'Hay improvisadores famosos que tocaban un solo entero sobre un único acorde dórico durante minutos. El secreto era el ritmo, no la cantidad de notas.' }),
+        P('Para cerrar', quiz(
+          Q('¿Cuál es la nota más segura para terminar una frase?', ['Cualquiera de la escala', 'Una nota del acorde que suena', 'La más aguda'], 1, 'Las notas del acorde «descansan»; las otras piden seguir.'),
+          Q('Em pentatónica y G pentatónica mayor…', ['Comparten notas', 'No tienen nada que ver', 'Son la misma escala que la de blues'], 0, 'Son relativas: mismas notas, distinto centro.'))),
       ] },
     ] },
 
@@ -749,15 +808,21 @@
         P('A tocar',
           ex('sl1', 'Slides', { bpm: 70, seq: '3.5/7:2 3.7 3.5 | 4.5/7:2 4.7 4.5 | 3.5/7:2 2.5 2.8 | 1.5:4', repeat: 2 })),
       ] },
-      { id: 'l-bends', title: 'Bends y vibrato', min: 6, pages: [
+      { id: 'l-bends', title: 'Bends y vibrato', min: 8, pages: [
         P('Estirar la cuerda',
-          { p: 'En un **bend** empujas la cuerda hacia arriba (o abajo) mientras suena, y la nota sube. El más común es de **un tono**: el traste 7 de la 3ª cuerda tiene que sonar como el traste 9.' },
-          { listen: [{ label: 'La nota objetivo (3ª, traste 9)', notes: [midiOf(3, 9)] }] },
+          { p: 'En un **bend** empujas la cuerda hacia arriba (o abajo) mientras suena, y la nota sube. El más común es de **un tono**: el traste 7 de la 3ª cuerda (Re) tiene que llegar a sonar como el traste 9 (**Mi**).' },
+          { listen: [{ label: 'Desde dónde (3ª, traste 7)', notes: [midiOf(3, 7)] }, { label: 'A dónde llegar (3ª, traste 9)', notes: [midiOf(3, 9)] }] },
           { tip: 'Usa **tres dedos** juntos (1, 2 y 3) para empujar, y gira la muñeca como si abrieras una puerta. Con un solo dedo no llegas.' }),
-        P('Practica con el afinador',
-          { p: 'Abre el afinador, toca el traste 9 de la 3ª cuerda y mira la nota: **La**. Ahora haz el bend desde el traste 7 hasta que el afinador marque La.' },
-          { tune: true },
-          { p: 'El **vibrato** es un bend chiquito que va y viene, parejo. Es la firma de cada guitarrista: escucha cómo lo hacen tus favoritos.' }),
+        P('Medio tono',
+          { p: 'Empieza por bends chicos. Toca, estira, y mira la aguja: tiene que entrar en la zona verde y **quedarse ahí** un momento.' },
+          { trainer: 'bend', level: 0, count: 5 }),
+        P('Un tono',
+          { p: 'Ahora un tono entero en la 3ª cuerda. Si te pasas, la aguja se pone roja: afloja un poco.' },
+          { trainer: 'bend', level: 1, count: 5 }),
+        P('Vibrato',
+          { p: 'El **vibrato** es un bend chiquito que va y viene, parejo, como una voz. Es la firma de cada guitarrista: escucha cómo lo hacen tus favoritos.' },
+          { p: 'Pruébalo al final de una frase: toca la nota, espera un instante, y empieza a moverla. Más lento suena a blues; más rápido, a rock.' },
+          { fun: 'En el violín y la guitarra clásica el vibrato se hace a lo largo de la cuerda; en la guitarra eléctrica casi siempre se hace estirándola.' }),
       ] },
     ] },
 
@@ -818,14 +883,515 @@
   const ALL = COURSE.flatMap((u) => u.lessons.map((l) => Object.assign(l, { unit: u })));
   for (const L of ALL) for (const x of exercisesOf(L)) x.lessonId = L.id;
 
-  // ------------------------------------------------------------------ text with **bold**
+  // ------------------------------------------------------------------ text with **bold** (translated)
   function rich(text) {
     const out = [];
-    String(text).split(/(\*\*[^*]+\*\*)/).forEach((part) => {
+    String(tr(text)).split(/(\*\*[^*]+\*\*)/).forEach((part) => {
       if (part.startsWith('**') && part.endsWith('**')) out.push(el('b', { text: part.slice(2, -2) }));
       else if (part) out.push(document.createTextNode(part));
     });
     return out;
+  }
+  const txt = (x) => (typeof x === 'function' ? x() : tr(x));
+
+  // ------------------------------------------------------------------ hearing your guitar (the tuner's pitch, live)
+  const Ear = {
+    guitar: null, cb: null, last: null,
+    /** Starts listening; fn(reading) gets {midi (float), level} or null for silence, ~30 times a second. */
+    async start(fn) {
+      this.cb = fn;
+      const g = await G.call('gameGuitar', {});
+      this.guitar = g && g.ok ? g.data : null;
+      await G.call('setTuner', { on: true, trackId: this.guitar ? this.guitar.trackId : 0 });
+      G.App.onTuner = (r) => {
+        if (!this.cb) return;
+        this.last = r;
+        if (!r.active || !(r.freq > 20) || r.level < 0.002) return this.cb(null, r);
+        this.cb({ midi: 69 + 12 * Math.log2(r.freq / 440), level: r.level }, r);
+      };
+      return this.guitar;
+    },
+    async create() {
+      const r = await G.run('gameGuitar', { create: true });
+      if (r) { this.guitar = r; await G.call('setTuner', { on: true, trackId: r.trackId }); }
+      return this.guitar;
+    },
+    stop() {
+      if (!this.cb) return;
+      this.cb = null;
+      G.App.onTuner = null;
+      G.call('setTuner', { on: false });
+    },
+  };
+  /** The «where your guitar comes in» line, with a level meter. */
+  function earBar(onReady) {
+    const meter = el('i.l-lvl');
+    const line = el('div.l-earbar', null, el('span.l-lvlwrap', null, meter), el('span', { text: L2('Conectando…', 'Connecting…') }));
+    const show = () => {
+      const g = Ear.guitar;
+      line.replaceChildren(el('span.l-lvlwrap', { title: L2('Lo que entra de tu guitarra', 'What comes in from your guitar') }, meter),
+        g ? el('span', { text: L2('Te escucho por ', 'Listening through ') + g.name + (g.input >= 0 ? ' · ' + L2('entrada ', 'input ') + (g.input + 1) : '') })
+          : el('span', null, L2('No tengo por dónde escucharte. ', "I can't hear you yet. "),
+            el('button.btn', { onclick: async () => { await Ear.create(); show(); if (onReady) onReady(); } }, L2('Escuchar mi guitarra', 'Listen to my guitar'))));
+    };
+    line._meter = (r) => { const lv = r && r.level > 0 ? 20 * Math.log10(r.level) : -100; meter.style.width = Math.max(0, Math.min(100, (lv + 60) * 100 / 54)) + '%'; };
+    line._show = show;
+    return line;
+  }
+
+  // ------------------------------------------------------------------ progress for the trainers
+  const tp = (kind) => { prog.tr = prog.tr || {}; return (prog.tr[kind] = prog.tr[kind] || { lv: {}, best: 0, miss: {} }); };
+  const starsFor = (acc) => (acc >= 0.95 ? 3 : acc >= 0.8 ? 2 : acc >= 0.6 ? 1 : 0);
+  function pickWeighted(items, kind, keyOf) {
+    const miss = tp(kind).miss;
+    const w = items.map((it) => 1 + 2 * Math.min(5, miss[keyOf(it)] || 0));
+    let r = Math.random() * w.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < items.length; i++) { r -= w[i]; if (r <= 0) return items[i]; }
+    return items[items.length - 1];
+  }
+  function noteMiss(kind, key, wrong) {
+    const m = tp(kind).miss;
+    m[key] = Math.max(0, (m[key] || 0) + (wrong ? 1 : -0.5));
+    save();
+  }
+
+  // ------------------------------------------------------------------ the trainers
+  const NATURALS = [0, 2, 4, 5, 7, 9, 11];
+  const NOTE_LEVELS = [
+    { name: ['Cuerda 6', 'String 6'], strings: [6] },
+    { name: ['Cuerda 5', 'String 5'], strings: [5] },
+    { name: ['Cuerdas 6 y 5, con sostenidos', 'Strings 6 and 5, with sharps'], strings: [6, 5], sharps: true },
+    { name: ['Cuerdas 4 y 3', 'Strings 4 and 3'], strings: [4, 3] },
+    { name: ['Cuerdas 2 y 1', 'Strings 2 and 1'], strings: [2, 1] },
+    { name: ['Todo el mástil', 'The whole neck'], strings: [6, 5, 4, 3, 2, 1], sharps: true },
+  ];
+  const ENDLESS_NOTES = { name: ['Práctica eterna', 'Endless practice'], strings: [6, 5, 4, 3, 2, 1], sharps: true };
+  const INTERVALS = { 1: ['2ª menor', 'minor 2nd'], 2: ['2ª mayor', 'major 2nd'], 3: ['3ª menor', 'minor 3rd'], 4: ['3ª mayor', 'major 3rd'], 5: ['4ª justa', 'perfect 4th'], 6: ['Tritono', 'Tritone'], 7: ['5ª justa', 'perfect 5th'], 8: ['6ª menor', 'minor 6th'], 9: ['6ª mayor', 'major 6th'], 10: ['7ª menor', 'minor 7th'], 11: ['7ª mayor', 'major 7th'], 12: ['Octava', 'Octave'] };
+  const EAR_LEVELS = [
+    { name: ['3ª mayor, 5ª y octava', 'Major 3rd, 5th and octave'], set: [4, 7, 12] },
+    { name: ['+ 3ª menor y 4ª', '+ minor 3rd and 4th'], set: [3, 4, 5, 7, 12] },
+    { name: ['+ 2ª, 6ª y 7ª', '+ 2nd, 6th and 7th'], set: [2, 3, 4, 5, 7, 9, 10, 12] },
+    { name: ['Todos, subiendo y bajando', 'All of them, up and down'], set: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], down: true },
+  ];
+  const CHORD_KINDS = { M: [[0, 4, 7], ['Mayor', 'Major']], m: [[0, 3, 7], ['Menor', 'Minor']], 7: [[0, 4, 7, 10], ['Séptima (7)', 'Dominant 7']], maj7: [[0, 4, 7, 11], ['Séptima mayor (maj7)', 'Major 7']], m7: [[0, 3, 7, 10], ['Menor séptima (m7)', 'Minor 7']], 5: [[0, 7, 12], ['Power chord (5)', 'Power chord (5)']], dim: [[0, 3, 6], ['Disminuido', 'Diminished']], sus4: [[0, 5, 7], ['Suspendido (sus4)', 'Suspended (sus4)']] };
+  const CHORD_LEVELS = [
+    { name: ['Mayor o menor', 'Major or minor'], set: ['M', 'm'] },
+    { name: ['+ séptima', '+ dominant 7'], set: ['M', 'm', '7'] },
+    { name: ['+ maj7, m7 y power chord', '+ maj7, m7 and power chord'], set: ['M', 'm', '7', 'maj7', 'm7', '5'] },
+    { name: ['Todos', 'All of them'], set: ['M', 'm', '7', 'maj7', 'm7', '5', 'dim', 'sus4'] },
+  ];
+  // bends: string, fret, how many semitones up
+  const BEND_LEVELS = [
+    { name: ['Medio tono', 'Half step'], set: [[3, 7, 1], [2, 8, 1], [2, 10, 1], [1, 8, 1]] },
+    { name: ['Un tono en la 3ª cuerda', 'Whole step on string 3'], set: [[3, 7, 2], [3, 9, 2], [3, 5, 2], [3, 4, 2]] },
+    { name: ['Un tono en la 2ª y la 1ª', 'Whole step on strings 2 and 1'], set: [[2, 8, 2], [2, 10, 2], [1, 8, 2], [1, 10, 2], [2, 5, 2]] },
+    { name: ['Hasta tono y medio', 'Up to a step and a half'], set: [[3, 7, 2], [2, 8, 2], [2, 8, 3], [3, 7, 3], [2, 10, 1], [1, 10, 2]] },
+  ];
+  const TRAINERS = {
+    find: { icon: '🎯', title: ['Encuentra la nota', 'Find the note'], desc: ['Te pido una nota en una cuerda y la buscas en tu guitarra. Te escucho y te digo dónde caíste.', 'I ask for a note on a string and you find it on your guitar. I listen and tell you where you landed.'], levels: NOTE_LEVELS, endless: ENDLESS_NOTES, live: true },
+    name: { icon: '👀', title: ['¿Qué nota es?', 'Which note is it?'], desc: ['Te muestro un punto en el mástil y eliges su nombre.', 'I show a spot on the neck and you pick its name.'], levels: NOTE_LEVELS, endless: ENDLESS_NOTES },
+    ear: { icon: '👂', title: ['Intervalos de oído', 'Ear: intervals'], desc: ['Escuchas dos notas y dices qué distancia hay.', 'Hear two notes and name the distance.'], levels: EAR_LEVELS, endless: { name: ['Práctica eterna', 'Endless practice'], set: EAR_LEVELS[3].set, down: true } },
+    chordEar: { icon: '🎵', title: ['Acordes de oído', 'Ear: chords'], desc: ['¿Mayor, menor, séptima…? Escúchalo y elige.', 'Major, minor, seventh…? Listen and choose.'], levels: CHORD_LEVELS, endless: { name: ['Práctica eterna', 'Endless practice'], set: CHORD_LEVELS[3].set } },
+    bend: { icon: '〰️', title: ['Bends afinados', 'Bends in tune'], desc: ['Estira la cuerda hasta la nota justa. Te muestro en vivo si te falta o te pasas.', 'Bend the string up to the right note. I show you live if you are short or past it.'], levels: BEND_LEVELS, endless: { name: ['Práctica eterna', 'Endless practice'], set: BEND_LEVELS[3].set.concat(BEND_LEVELS[0].set) }, live: true },
+  };
+  const lvName = (lv) => L2(lv.name[0], lv.name[1]);
+
+  /** A trainer, in a box. opts: {kind, level (index, or 'endless'), count, onExit, inline} */
+  function trainer(opts) {
+    const T = TRAINERS[opts.kind];
+    const endless = opts.level === 'endless';
+    const lv = endless ? T.endless : T.levels[opts.level];
+    const count = endless ? Infinity : (opts.count || 10);
+    const box = el('div.l-trainer' + (opts.inline ? '.inline' : ''));
+    const stat = { n: 0, right: 0, streak: 0, best: tp(opts.kind).best || 0, startedAt: 0 };
+    const head = el('div.l-trhead');
+    const stage = el('div.l-trstage');
+    const foot = el('div.l-trfoot');
+    let bar = null, cleanup = null, finished = false;
+    box.append(head, stage, foot);
+    if (T.live) { bar = earBar(() => {}); box.insertBefore(bar, stage); }
+
+    function header() {
+      head.replaceChildren(
+        el('div', null, el('b', { text: (opts.inline ? '' : T.icon + ' ') + L2(T.title[0], T.title[1]) }), el('small', { text: lvName(lv) })),
+        el('div.l-trstats', null,
+          el('span', null, el('small', { text: L2('Bien', 'Right') }), el('b', { text: endless ? String(stat.right) : `${stat.right}/${Math.min(stat.n, count)}` })),
+          el('span', null, el('small', { text: L2('Racha', 'Streak') }), el('b', { text: String(stat.streak) })),
+          endless ? el('span', null, el('small', { text: L2('Récord', 'Record') }), el('b', { text: String(stat.best) })) : null));
+    }
+    function result(ok, key) {
+      stat.n++;
+      if (ok) { stat.right++; stat.streak++; } else stat.streak = 0;
+      if (endless && stat.streak > stat.best) { stat.best = stat.streak; tp(opts.kind).best = stat.best; save(); }
+      if (key !== undefined) noteMiss(opts.kind, key, !ok);
+      header();
+    }
+    function next() {
+      if (finished) return;
+      if (cleanup) { cleanup(); cleanup = null; }
+      if (stat.n >= count) return finish();
+      cleanup = ASK[opts.kind](lv, stage, (ok, key) => result(ok, key), () => setTimeout(next, 0), endless, opts.kind) || null;
+    }
+    function finish() {
+      finished = true;
+      if (cleanup) { cleanup(); cleanup = null; }
+      Ear.stop();
+      const acc = stat.n ? stat.right / stat.n : 0;
+      const st = starsFor(acc);
+      if (!endless) { const t = tp(opts.kind); t.lv[opts.level] = Math.max(t.lv[opts.level] || 0, st); save(); }
+      const nextLv = !endless && T.levels[opts.level + 1];
+      stage.replaceChildren(
+        el('div.l-stars', null, [0, 1, 2].map((i) => el('span' + (i < st ? '.on' : ''), { text: '★' }))),
+        el('p.l-score', { text: `${stat.right} ${L2('de', 'of')} ${stat.n}. ` + (st === 3 ? L2('¡Perfecto!', 'Perfect!') : st === 2 ? L2('Muy bien.', 'Very good.') : st === 1 ? L2('Vas bien: una vuelta más.', 'Getting there: one more round.') : L2('Repasa y prueba otra vez, sin apuro.', 'Review and try again, no rush.')) }),
+        el('div.row', null,
+          el('button.btn' + (st >= 2 && nextLv ? '' : '.primary'), { onclick: () => restart(opts.level) }, L2('Otra ronda', 'Another round')),
+          nextLv && !opts.inline ? el('button.btn' + (st >= 2 ? '.primary' : ''), { onclick: () => restart(opts.level + 1) }, L2('Siguiente nivel', 'Next level')) : null,
+          opts.onExit ? el('button.btn', { onclick: opts.onExit }, L2('Volver', 'Back')) : null));
+      foot.replaceChildren();
+    }
+    function restart(level) {
+      const nb = trainer(Object.assign({}, opts, { level }));
+      box.replaceWith(nb);
+    }
+    header();
+    if (endless || !opts.inline) foot.append(el('button.btn', { onclick: () => (endless ? finish() : opts.onExit ? (stop(), opts.onExit()) : finish()) }, endless ? L2('Terminar', 'Finish') : L2('Salir', 'Quit')));
+    const stop = () => { finished = true; if (cleanup) cleanup(); cleanup = null; Ear.stop(); };
+    box._stop = stop;
+    if (T.live) {
+      Ear.start((r, raw) => { bar._meter(raw); if (box._onPitch) box._onPitch(r); }).then(() => { bar._show(); next(); });
+    } else next();
+    // when the box leaves the page, stop listening
+    activeTrainers.push(box);
+    return box;
+  }
+  const activeTrainers = [];
+  function stopTrainers() { while (activeTrainers.length) { const b = activeTrainers.pop(); if (b._stop) b._stop(); } stopJam(); stopSound(); }
+
+  const noteBtnLabel = (pc) => (NATURALS.includes(pc) ? noteName(pc) : (G.lang === 'en' ? `${EN[pc]} / ${FLAT_EN[pc]}` : `${ES[pc]} / ${FLAT_ES[pc]}`));
+  const FLAT_ES = { 1: 'Reb', 3: 'Mib', 6: 'Solb', 8: 'Lab', 10: 'Sib' };
+  const FLAT_EN = { 1: 'Db', 3: 'Eb', 6: 'Gb', 8: 'Ab', 10: 'Bb' };
+
+  /** Each kind of question: draws itself in `stage`, calls done(ok, key) once and next() when it's time. Returns a cleanup. */
+  const ASK = {
+    find(lv, stage, done, next, endless, kind) {
+      const pcs = lv.sharps ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] : NATURALS;
+      const items = [];
+      for (const s of lv.strings) for (const pc of pcs) items.push([s, pc]);
+      let it;
+      do { it = pickWeighted(items, kind, (x) => x.join(':')); } while (ASK._last === it.join(':') && items.length > 1);
+      ASK._last = it.join(':');
+      const [str, pc] = it;
+      const open = OPEN[6 - str];
+      const frets = []; for (let f = 0; f <= 12; f++) if ((open + f) % 12 === pc) frets.push(f);
+      let tries = 0, judged = false, armed = true, stable = { m: null, n: 0 }, lastJudged = null;
+      const marks = [];
+      const say = el('p.l-trsay');
+      const t0 = performance.now();
+      const draw = () => fb.replaceChildren(fretboard({ to: 12, hl: str, marks, onPick: (s, f) => { if (s === str) judge(open + f, true); } }));
+      const fb = el('div');
+      stage.replaceChildren(
+        el('p.l-trq', null, ...rich(L2(`Toca **${noteBtnLabel(pc)}** en la cuerda **${str}**`, `Play **${noteBtnLabel(pc)}** on string **${str}**`))),
+        fb, say,
+        el('div.row', null, el('button.l-hear', { onclick: () => hearNotes([open + frets[0]]) }, G.icon('play', 12), L2('¿Cómo suena?', 'How does it sound?')),
+          el('button.btn', { onclick: () => reveal(true) }, L2('Mostrar', 'Show me'))));
+      draw();
+      function reveal(gaveUp) {
+        if (judged) return;
+        judged = true;
+        for (const f of frets) marks.push({ s: str, f, label: EN[pc], good: true });
+        draw();
+        say.replaceChildren(...rich(L2(`Está en el traste **${frets.join(' y ')}**.`, `It's on fret **${frets.join(' and ')}**.`)));
+        done(false, it.join(':'));
+        setTimeout(next, gaveUp ? 2200 : 2000);
+      }
+      function judge(midi, clicked) {
+        if (judged) return;
+        const f = midi - open;
+        if (midi % 12 === pc && f >= 0 && f <= 15) {
+          judged = true;
+          marks.push({ s: str, f, label: EN[pc], good: true });
+          draw();
+          const secs = (performance.now() - t0) / 1000;
+          say.replaceChildren(el('b.l-ok', { text: L2('¡Sí! ', 'Yes! ') }), ...rich(L2(`Traste ${f}`, `Fret ${f}`) + (secs < 3 ? L2(' · rapidísimo', ' · lightning fast') : ` · ${secs.toFixed(1)} s`)));
+          if (clicked) hearNotes([midi]);
+          done(tries === 0, it.join(':'));
+          setTimeout(next, 1100);
+          return;
+        }
+        tries++;
+        const name = noteName(((midi % 12) + 12) % 12);
+        let msg;
+        if (midi % 12 === pc) msg = L2(`Es ${noteBtnLabel(pc)}, pero en otra cuerda u octava. Búscala en la cuerda ${str}.`, `That's ${noteBtnLabel(pc)}, but on another string or octave. Look for it on string ${str}.`);
+        else if (f >= 0 && f <= 15) {
+          marks.push({ s: str, f, label: EN[((midi % 12) + 12) % 12], bad: true });
+          const target = frets.reduce((a, b) => (Math.abs(b - f) < Math.abs(a - f) ? b : a));
+          const d = target - f;
+          msg = L2(`Eso es ${name} (traste ${f}). Te ${d > 0 ? 'faltan' : 'pasaste por'} ${Math.abs(d)} ${Math.abs(d) === 1 ? 'traste' : 'trastes'}.`, `That's ${name} (fret ${f}). ${d > 0 ? 'Go up' : 'Go down'} ${Math.abs(d)} ${Math.abs(d) === 1 ? 'fret' : 'frets'}.`);
+          draw();
+        } else msg = L2(`Eso es ${name}, y no está en la cuerda ${str}. ¿Otra cuerda?`, `That's ${name}, and it isn't on string ${str}. Another string?`);
+        say.replaceChildren(el('b.l-bad', { text: L2('Casi. ', 'Close. ') }), document.createTextNode(msg));
+        if (clicked) hearNotes([midi]);
+        if (tries >= 3) reveal(false);
+      }
+      // live: a note counts when it holds steady for a moment; the same note again needs a new attack
+      stage.closest && null;
+      const host = stage.parentElement;
+      host._onPitch = (r) => {
+        if (!r) { stable = { m: null, n: 0 }; armed = true; return; }
+        const m = Math.round(r.midi);
+        if (Math.abs(r.midi - m) > 0.4) return;
+        if (stable.m === m) stable.n++; else stable = { m, n: 1 };
+        if (stable.n === 3 && (armed || m !== lastJudged)) { armed = false; lastJudged = m; judge(m, false); }
+      };
+      return () => { host._onPitch = null; };
+    },
+
+    name(lv, stage, done, next, endless, kind) {
+      const pcs = lv.sharps ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] : NATURALS;
+      const items = [];
+      for (const s of lv.strings) for (let f = 0; f <= 12; f++) if (pcs.includes((OPEN[6 - s] + f) % 12)) items.push([s, f]);
+      let it;
+      do { it = pickWeighted(items, kind, (x) => x.join(':')); } while (ASK._lastN === it.join(':'));
+      ASK._lastN = it.join(':');
+      const [str, f] = it, pc = (OPEN[6 - str] + f) % 12;
+      const say = el('p.l-trsay');
+      const opts = pcs.length > 7 ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] : NATURALS;
+      const btns = opts.map((o) => el('button.l-opt', { onclick: () => {
+        btns.forEach((b, i) => { b.disabled = true; b.classList.toggle('right', opts[i] === pc); b.classList.toggle('wrong', opts[i] === o && o !== pc); });
+        say.replaceChildren(...rich(L2(`Cuerda ${str}, traste ${f}: **${noteBtnLabel(pc)}**.`, `String ${str}, fret ${f}: **${noteBtnLabel(pc)}**.`)));
+        hearNotes([OPEN[6 - str] + f]);
+        done(o === pc, it.join(':'));
+        setTimeout(next, o === pc ? 900 : 1800);
+      } }, noteBtnLabel(o)));
+      stage.replaceChildren(el('p.l-trq', { text: L2('¿Qué nota es?', 'Which note is it?') }), fretboard({ to: 12, marks: [{ s: str, f, label: '?' }] }), el('div.l-opts' + (opts.length > 7 ? '.wide' : ''), null, btns), say);
+    },
+
+    ear(lv, stage, done, next, endless, kind) {
+      const st = pickWeighted(lv.set, kind, (x) => String(x));
+      const down = lv.down && Math.random() < 0.4;
+      const low = 50 + Math.floor(Math.random() * 10);
+      const notes = down ? [low + st, low] : [low, low + st];
+      const playIt = () => hearNotes(notes, 0.75);
+      const say = el('p.l-trsay');
+      const btns = lv.set.map((o) => el('button.l-opt', { onclick: () => {
+        btns.forEach((b, i) => { b.disabled = true; b.classList.toggle('right', lv.set[i] === st); b.classList.toggle('wrong', lv.set[i] === o && o !== st); });
+        say.textContent = L2('Era ', 'It was ') + L2(INTERVALS[st][0], INTERVALS[st][1]) + (down ? L2(', bajando.', ', going down.') : '.');
+        done(o === st, String(st));
+        setTimeout(next, o === st ? 1000 : 2000);
+      } }, L2(INTERVALS[o][0], INTERVALS[o][1])));
+      stage.replaceChildren(el('p.l-trq', { text: L2('¿Qué intervalo es?', 'Which interval is it?') }), el('div.row', null, listenBtn(L2('Escuchar de nuevo', 'Hear it again'), playIt)), el('div.l-opts', null, btns), say);
+      setTimeout(playIt, 250);
+    },
+
+    chordEar(lv, stage, done, next, endless, kind) {
+      const k = pickWeighted(lv.set, kind, (x) => x);
+      const root = 45 + Math.floor(Math.random() * 10);
+      const ps = CHORD_KINDS[k][0].map((x) => root + x);
+      const playIt = () => playGuide([{ t: 0, p: ps, d: 1.6 }, { t: 1.9, p: ps.slice(0, 1), d: 0.5 }].concat(ps.map((p, i) => ({ t: 2.5 + i * 0.35, p: [p], d: 0.5 }))));
+      const say = el('p.l-trsay');
+      const btns = lv.set.map((o) => el('button.l-opt', { onclick: () => {
+        btns.forEach((b, i) => { b.disabled = true; b.classList.toggle('right', lv.set[i] === k); b.classList.toggle('wrong', lv.set[i] === o && o !== k); });
+        say.textContent = L2('Era ', 'It was ') + L2(CHORD_KINDS[k][1][0], CHORD_KINDS[k][1][1]).toLowerCase() + '.';
+        done(o === k, k);
+        setTimeout(next, o === k ? 1000 : 2000);
+      } }, L2(CHORD_KINDS[o][1][0], CHORD_KINDS[o][1][1])));
+      stage.replaceChildren(el('p.l-trq', { text: L2('¿Qué tipo de acorde es?', 'What kind of chord is it?') }), el('p.note', { text: L2('Suena junto, después nota por nota.', 'Strummed, then note by note.') }), el('div.row', null, listenBtn(L2('Escuchar de nuevo', 'Hear it again'), playIt)), el('div.l-opts', null, btns), say);
+      setTimeout(playIt, 250);
+    },
+
+    bend(lv, stage, done, next, endless, kind) {
+      const it = pickWeighted(lv.set, kind, (x) => x.join(':'));
+      const [str, fret, semis] = it;
+      const from = midiOf(str, fret), target = from + semis;
+      const amount = { 1: L2('medio tono', 'a half step'), 2: L2('un tono', 'a whole step'), 3: L2('tono y medio', 'a step and a half') }[semis];
+      const W = 520, lo = -0.6, hi = semis + 0.7;
+      const X = (st) => 20 + (st - lo) / (hi - lo) * (W - 40);
+      const needle = svg('rect', { x: X(0) - 2, y: 18, width: 4, height: 44, rx: 2, fill: '#888' });
+      const zone = svg('rect', { x: X(semis - 0.2), y: 14, width: X(semis + 0.2) - X(semis - 0.2), height: 52, rx: 6, fill: '#173b25', stroke: '#4ade80' });
+      const meter = svg('svg', { viewBox: `0 0 ${W} 90`, width: W, height: 90, class: 'l-bendm' },
+        svg('rect', { x: 20, y: 36, width: W - 40, height: 8, rx: 4, fill: '#2a2a30' }), zone,
+        svg('line', { x1: X(0), x2: X(0), y1: 22, y2: 58, stroke: '#666', 'stroke-dasharray': '3 3' }),
+        svg('text', { x: X(0), y: 82, 'text-anchor': 'middle', 'font-size': 12, fill: '#aaa' }, noteShort(from % 12) + ' · ' + L2('traste ', 'fret ') + fret),
+        svg('text', { x: X(semis), y: 82, 'text-anchor': 'middle', 'font-size': 13, 'font-weight': 700, fill: '#4ade80' }, noteShort(target % 12) + ' ✓'),
+        needle);
+      const say = el('p.l-trsay', { text: L2('Toca la nota y estírala…', 'Play the note and bend it…') });
+      let held = 0, finished = false, last = performance.now();
+      stage.replaceChildren(
+        el('p.l-trq', null, ...rich(L2(`Cuerda **${str}**, traste **${fret}**: súbela **${amount}**, hasta **${noteBtnLabel(target % 12)}**`, `String **${str}**, fret **${fret}**: bend it up **${amount}**, to **${noteBtnLabel(target % 12)}**`))),
+        el('div.row', null, listenBtn(L2('Escuchar el objetivo', 'Hear the target'), () => hearNotes([target])), listenBtn(L2('Desde dónde', 'Where it starts'), () => hearNotes([from]))),
+        el('div.l-bendwrap', null, meter), say,
+        el('div.row', null, el('button.btn', { onclick: () => { if (!finished) { finished = true; done(false, it.join(':')); next(); } } }, L2('Saltar', 'Skip'))));
+      const host = stage.parentElement;
+      host._onPitch = (r) => {
+        if (finished) return;
+        const now = performance.now(), dt = now - last; last = now;
+        if (!r) { needle.setAttribute('fill', '#888'); held = 0; return; }
+        // the nearest octave of the bent note, around where it should be
+        let st = r.midi - from;
+        st -= 12 * Math.round((st - semis / 2) / 12);
+        if (st < lo - 0.5 || st > hi + 1) return;
+        needle.setAttribute('x', Math.max(14, Math.min(W - 18, X(st) - 2)));
+        const off = st - semis;
+        if (Math.abs(off) <= 0.2) {
+          held += dt;
+          needle.setAttribute('fill', '#4ade80');
+          say.textContent = L2('¡Ahí! Mantenla…', 'There! Hold it…');
+          if (held > 450) {
+            finished = true;
+            say.replaceChildren(el('b.l-ok', { text: L2('¡Afinado! ', 'In tune! ') }), document.createTextNode(Math.abs(off) < 0.08 ? L2('Clavado.', 'Spot on.') : ''));
+            done(true, it.join(':'));
+            setTimeout(next, 1200);
+          }
+        } else {
+          held = 0;
+          needle.setAttribute('fill', off > 0 ? '#f87171' : '#e6a84a');
+          say.textContent = st < 0.3 ? L2('Toca la nota y estírala…', 'Play the note and bend it…') : off < 0 ? L2('Un poco más…', 'A bit more…') : L2('Te pasaste: afloja un poco.', 'Too far: ease off a little.');
+        }
+      };
+      return () => { host._onPitch = null; };
+    },
+  };
+
+  // ------------------------------------------------------------------ free improvisation over a backing track
+  const JAMS = [
+    { id: 'rock-am', title: ['Rock en La menor', 'Rock in A minor'], bpm: 100, drums: 'rock', prog: ['Am', 'G', 'F', 'G'], roots: [9, 7, 5, 7], scale: [9, 0, 2, 4, 7], root: 9,
+      scaleName: ['Pentatónica menor de La', 'A minor pentatonic'], tip: ['Empieza en la caja 1 (traste 5). Cuando cambie el acorde, busca las notas con anillo: son las del acorde.', 'Start in box 1 (fret 5). When the chord changes, look for the ringed notes: they belong to the chord.'] },
+    { id: 'blues-a', title: ['Blues en La', 'Blues in A'], bpm: 90, drums: 'rock', prog: ['A7', 'A7', 'A7', 'A7', 'D7', 'D7', 'A7', 'A7', 'E7', 'D7', 'A7', 'E7'], roots: [9, 9, 9, 9, 2, 2, 9, 9, 4, 2, 9, 4], scale: [9, 0, 2, 3, 4, 7], blue: 3, root: 9,
+      scaleName: ['Escala de blues de La', 'A blues scale'], tip: ['Doce compases. La nota azul (Mib) es de paso: tócala de camino a otra.', 'Twelve bars. The blue note (Eb) is a passing note: play it on the way to another.'] },
+    { id: 'pop-g', title: ['Pop en Sol', 'Pop in G'], bpm: 85, drums: 'soft', prog: ['G', 'D', 'Em', 'C'], roots: [7, 2, 4, 0], scale: [7, 9, 11, 2, 4], root: 7,
+      scaleName: ['Pentatónica mayor de Sol', 'G major pentatonic'], tip: ['Es la misma forma que la pentatónica de Mi menor: suena alegre si vuelves a Sol.', 'Same shape as E minor pentatonic: it sounds happy when you come back to G.'] },
+    { id: 'balada-em', title: ['Balada en Mi menor', 'Ballad in E minor'], bpm: 70, drums: 'soft', prog: ['Em', 'C', 'G', 'D'], roots: [4, 0, 7, 2], scale: [4, 7, 9, 11, 2], root: 4,
+      scaleName: ['Pentatónica menor de Mi', 'E minor pentatonic'], tip: ['Lento: toca pocas notas y déjalas sonar. El silencio también es música.', 'Slow: play few notes and let them ring. Silence is music too.'] },
+    { id: 'groove-dm', title: ['Groove en Re menor', 'Groove in D minor'], bpm: 96, drums: 'rock', prog: ['Dm', 'Dm', 'G', 'G'], roots: [2, 2, 7, 7], scale: [2, 4, 5, 7, 9, 11, 0], root: 2,
+      scaleName: ['Re dórico (menor con 6ª mayor)', 'D Dorian (minor with a major 6th)'], tip: ['El Si (B) es la nota con sabor de este modo: búscala cuando suena Sol.', 'B is the flavour note of this mode: look for it over the G chord.'] },
+  ];
+  let jamState = null;
+  G.on('tick', (t) => { if (jamState && jamState.onTick) jamState.onTick(t); });
+  function stopJam() {
+    if (!jamState) return;
+    const j = jamState; jamState = null;
+    Ear.stop();
+    G.call('gameClose');
+  }
+  function jamAudio(J) {
+    const spb = 60 / J.bpm, bpb = 4, cycles = Math.max(2, Math.ceil(40 / (J.prog.length * bpb * spb)));
+    const clicks = [], drums = [], guide = [];
+    const bars = J.prog.length * cycles;
+    for (let b = 0; b < bars; b++) {
+      const name = J.prog[b % J.prog.length], root = J.roots[b % J.prog.length];
+      const ps = chordPitches(name);
+      const t = b * bpb * spb;
+      // rhythm guitar: down on 1, down-up on 2 and 3, down on 4 (soft), bass on 1 and 3
+      for (const [o, d] of [[0, 1], [1, 0.5], [1.5, 0.5], [2, 0.5], [2.5, 0.5], [3, 1]]) guide.push({ t: t + o * spb, p: o % 1 ? ps.slice(-4) : ps, d: d * spb * 0.9 });
+      const bass = 28 + ((root - 4 + 12) % 12);
+      guide.push({ t, p: [bass], d: 2 * spb * 0.9 }, { t: t + 2 * spb, p: [bass + (J.drums === 'rock' ? 0 : 7)], d: 2 * spb * 0.9 });
+      for (let k = 0; k < bpb; k++) {
+        const tt = t + k * spb;
+        clicks.push({ t: tt, a: k === 0 });
+        if (J.drums === 'rock') { if (k % 2 === 0) drums.push({ t: tt, k: 'k' }); else drums.push({ t: tt, k: 's' }); drums.push({ t: tt, k: 'h' }, { t: tt + spb / 2, k: 'h' }); }
+        else { if (k === 0) drums.push({ t: tt, k: 'k' }); if (k === 2) drums.push({ t: tt, k: 's' }); drums.push({ t: tt, k: 'h' }); }
+      }
+    }
+    const length = bars * bpb * spb;
+    return { length: length + 1, clicks, drums, guide, clickOn: false, loopEnd: length, spb };
+  }
+
+  async function openJam(J, back) {
+    stopTrainers();
+    const a = jamAudio(J);
+    root.replaceChildren(el('div.g-loading', null, el('b', { text: L2(J.title[0], J.title[1]) }), el('span', { text: L2('Armando la base…', 'Building the backing track…') })));
+    const r = await G.call('gameOpenLesson', { data: { arrangements: {} }, length: a.length, clicks: a.clicks, drums: a.drums, guide: a.guide, clickOn: false });
+    if (!r || !r.ok) { G.toast((r && r.error) || L2('No se pudo armar la base', "Couldn't build the backing track"), true); return back(); }
+    await G.call('gameLoop', { on: true, a: 0, b: a.loopEnd });
+    const st = { J, a, playing: false, inScale: 0, total: 0, lit: new Map(), speed: 1, off: null };
+    jamState = st;
+    const chordNow = el('div.l-jamnow'), chordNext = el('div.l-jamnext');
+    const fbHost = el('div.l-jamfb');
+    const score = el('div.l-jamscore');
+    const playBtn = el('button.btn.primary', { onclick: () => { G.call(st.playing ? 'gamePause' : 'gamePlay'); st.playing = !st.playing; playBtn.textContent = st.playing ? L2('Pausa', 'Pause') : L2('Tocar la base', 'Play the backing'); } }, L2('Tocar la base', 'Play the backing'));
+    const speed = el('select.g-select', { 'aria-label': L2('Velocidad', 'Speed'), onchange: (e) => G.call('gameSpeed', { speed: +e.target.value }) },
+      [1.2, 1.1, 1, 0.9, 0.8, 0.7].map((v) => el('option', { value: v, selected: v === 1, text: Math.round(v * 100) + ' %' })));
+    const showAll = el('input', { type: 'checkbox', checked: true, onchange: () => drawFb() });
+    const bar = earBar(() => {});
+    const stems = (r.data.stems || []).filter((x) => x.id !== 'click');
+    const stemToggles = stems.map((x) => el('label.l-jamstem', null, el('input', { type: 'checkbox', checked: x.enabled, onchange: (e) => G.call('gameStem', { id: x.id, on: e.target.checked }) }), x.id === 'guitar' ? L2('Guitarra y bajo', 'Guitar and bass') : x.id === 'drums' ? L2('Batería', 'Drums') : x.name));
+    function chordAt(pos) { const i = Math.floor(pos / (4 * a.spb)) % J.prog.length; return [i, (i + 1) % J.prog.length]; }
+    let shownChord = -1;
+    function drawFb() {
+      const [ci] = chordAt(G.tick && G.tick.game ? G.tick.game.pos : 0);
+      const chordPcs = new Set(chordPitches(J.prog[ci]).map((p) => p % 12));
+      const marks = [];
+      for (let s = 1; s <= 6; s++) for (let f = 0; f <= 15; f++) {
+        const pc = (OPEN[6 - s] + f) % 12;
+        if (!J.scale.includes(pc)) continue;
+        if (!showAll.checked && !(f >= 4 && f <= 8)) continue;
+        const key = s + ':' + f;
+        const lit = st.lit.get(key);
+        marks.push({ s, f, label: pc === J.blue ? 'Eb' : EN[pc], root: pc === J.root, dim: pc === J.blue, ring: chordPcs.has(pc), glow: lit && performance.now() - lit < 600 });
+      }
+      for (const [key, at] of st.lit) {
+        if (performance.now() - at > 600) continue;
+        const [s, f] = key.split(':').map(Number);
+        const pc = (OPEN[6 - s] + f) % 12;
+        if (!J.scale.includes(pc)) marks.push({ s, f, label: EN[pc], bad: true });
+      }
+      fbHost.replaceChildren(fretboard({ to: 15, marks }));
+    }
+    function updateChord(pos) {
+      const [ci, ni] = chordAt(pos);
+      if (ci === shownChord) return;
+      shownChord = ci;
+      chordNow.replaceChildren(el('small', { text: L2('Ahora', 'Now') }), el('b', { text: chordLabel(J.prog[ci]) }));
+      chordNext.replaceChildren(el('small', { text: L2('Después', 'Next') }), el('b', { text: chordLabel(J.prog[ni]) }));
+      drawFb();
+    }
+    const onTick = (t) => { if (jamState === st && t.game) { updateChord(t.game.pos); if (t.game.playing !== st.playing) { st.playing = t.game.playing; playBtn.textContent = st.playing ? L2('Pausa', 'Pause') : L2('Tocar la base', 'Play the backing'); } } };
+    st.onTick = onTick;
+    let stable = { m: null, n: 0 }, lastCounted = null, redraw = 0;
+    await Ear.start((rr, raw) => {
+      bar._meter(raw);
+      if (jamState !== st) return;
+      if (!rr) { stable = { m: null, n: 0 }; lastCounted = null; return; }
+      const m = Math.round(rr.midi);
+      if (stable.m === m) stable.n++; else stable = { m, n: 1 };
+      if (stable.n < 2) return;
+      // light up where that exact note is on the neck
+      for (let s = 1; s <= 6; s++) { const f = m - OPEN[6 - s]; if (f >= 0 && f <= 15) st.lit.set(s + ':' + f, performance.now()); }
+      if (lastCounted !== m) {
+        lastCounted = m; st.total++;
+        if (J.scale.includes(((m % 12) + 12) % 12)) st.inScale++;
+        score.replaceChildren(el('small', { text: L2('Notas en la escala', 'Notes in the scale') }), el('b', { text: Math.round(100 * st.inScale / st.total) + ' %' }), el('small', { text: `${st.total} ${L2('notas', 'notes')}` }));
+      }
+      const now = performance.now();
+      if (now - redraw > 90) { redraw = now; drawFb(); }
+    });
+    bar._show();
+    score.replaceChildren(el('small', { text: L2('Notas en la escala', 'Notes in the scale') }), el('b', { text: '—' }));
+    const head = el('header.g-head.l-lhead', null,
+      el('button.g-mode', { onclick: () => { stopJam(); back(); } }, G.icon('back', 16), L2('Volver', 'Back')),
+      el('div.l-ltitle', null, el('small', { text: L2('Improvisación libre', 'Free improvisation') }), el('b', { text: L2(J.title[0], J.title[1]) })),
+      el('div.spacer'),
+      el('button.btn', { onclick: () => G.App.showTuner() }, G.icon('tuner', 15), L2('Afinar', 'Tune')));
+    const body = el('div.l-jam', { 'data-notr': '' },
+      el('div.l-jamtop', null, chordNow, chordNext, score),
+      el('p', null, ...rich(L2(`Escala: **${J.scaleName[0]}**. En rojo la tónica; con anillo, las notas del acorde que suena (las más seguras para terminar una frase).`, `Scale: **${J.scaleName[1]}**. The root in red; ringed, the notes of the chord that's playing (the safest to end a phrase on).`))),
+      fbHost,
+      el('div.l-tip', null, el('b', { text: L2('Truco', 'Tip') }), el('p', { text: L2(J.tip[0], J.tip[1]) })),
+      bar,
+      el('div.row.l-jamctl', null, playBtn, el('label.g-lab', null, L2('Velocidad', 'Speed'), speed),
+        el('label.l-jamstem', null, showAll, L2('Todo el mástil', 'Whole neck')), ...stemToggles),
+      el('p.note', { text: L2('No hay notas obligatorias: toca lo que quieras. Cuando suenas fuera de la escala, el punto se pinta de rojo.', "There are no set notes: play whatever you like. When you play outside the scale, the dot turns red.") }));
+    root.replaceChildren(el('div.l-lesson', { 'data-notr': '' }, head, el('div.l-scroll', null, body)));
+    updateChord(0);
+    // keep the glow fading even when you stop
+    const fade = setInterval(() => { if (jamState !== st) return clearInterval(fade); if ([...st.lit.values()].some((t) => performance.now() - t < 900)) drawFb(); }, 200);
+  }
+
+  // ------------------------------------------------------------------ chord changes (on the highway)
+  const CHANGE_PAIRS = [['Em', 'Am'], ['G', 'C'], ['C', 'D'], ['G', 'D'], ['D', 'A'], ['Am', 'E'], ['C', 'Am'], ['G', 'Em'], ['E', 'A'], ['C', 'F'], ['G5', 'C5'], ['F', 'G']];
+  function changesExercise(pair, bpm, per) {
+    const bar = (c) => Array(4 / per).fill(`[${c}]:${per}`).join(' ');
+    return { id: 'chg', label: `${chordLabel(pair[0])} ↔ ${chordLabel(pair[1])}`, bpm, drums: 'soft', seq: [bar(pair[0]), bar(pair[1])].join(' | '), repeat: 8 };
   }
 
   // ------------------------------------------------------------------ screens
@@ -834,10 +1400,14 @@
   Lessons.course = COURSE;
   Lessons.buildChart = buildChart;
   Lessons.parse = parse;
+  Lessons.trainers = TRAINERS;
+  Lessons.jams = JAMS;
+  Lessons.stopAll = () => stopTrainers();
 
   Lessons.show = function (r, lessonId) {
     root = r || root;
-    stopSound();
+    stopTrainers();
+    if (lessonId === '#practice') return renderCourse();
     if (lessonId) { const L = ALL.find((x) => x.id === lessonId); if (L) return openLesson(L, lp(L.id).page || 0); }
     renderCourse();
   };
@@ -846,39 +1416,126 @@
 
   function renderCourse() {
     current = null;
+    stopTrainers();
     const done = ALL.filter((L) => prog[L.id] && prog[L.id].done).length;
     const next = nextLesson();
     const head = el('header.g-head', null,
-      el('button.g-mode', { title: 'Volver al estudio', onclick: G.Game.leave }, G.icon('back', 16), 'Estudio'),
-      el('h1', { text: 'Juego' }),
+      el('button.g-mode', { title: L2('Volver al estudio', 'Back to the studio'), onclick: G.Game.leave }, G.icon('back', 16), L2('Estudio', 'Studio')),
+      el('h1', { text: L2('Juego', 'Game') }),
       G.Game.tabs('lessons'),
       el('div.spacer'),
-      el('button.btn', { onclick: () => G.App.showTuner() }, G.icon('tuner', 15), 'Afinar'));
+      el('button.btn', { onclick: () => G.App.showTuner() }, G.icon('tuner', 15), L2('Afinar', 'Tune')));
     const hero = el('section.l-hero', null,
       el('div', null,
-        el('h2', { text: done ? `Vas ${done} de ${ALL.length} lecciones` : 'Aprende guitarra tocando' }),
-        el('p', { text: done ? 'Sigue donde quedaste, o repite una para sacarle las 3 estrellas.' : `${ALL.length} lecciones cortas: teoría que se escucha, preguntas rápidas y ejercicios en la autopista que Galpon corrige.` }),
+        el('h2', { text: done ? L2(`Vas ${done} de ${ALL.length} lecciones`, `You've done ${done} of ${ALL.length} lessons`) : L2('Aprende guitarra tocando', 'Learn guitar by playing') }),
+        el('p', { text: done ? L2('Sigue donde quedaste, o repite una para sacarle las 3 estrellas.', 'Pick up where you left off, or replay one to get all 3 stars.') : L2(`${ALL.length} lecciones cortas: teoría que se escucha, preguntas rápidas y ejercicios en la autopista que Galpon corrige.`, `${ALL.length} short lessons: theory you can hear, quick questions and exercises on the highway that Galpon checks.`) }),
         el('div.l-bar', null, el('i', { style: { width: Math.round(100 * done / ALL.length) + '%' } }))),
-      next ? el('button.btn.primary.l-go', { onclick: () => openLesson(next, lp(next.id).page || 0) }, done ? 'Seguir: ' + next.title : 'Empezar') : el('p.l-alldone', { text: '¡Curso completo! 🎸' }));
+      next ? el('button.btn.primary.l-go', { onclick: () => openLesson(next, lp(next.id).page || 0) }, done ? L2('Seguir: ', 'Continue: ') + txt(next.title) : L2('Empezar', 'Start')) : el('p.l-alldone', { text: L2('¡Curso completo! 🎸', 'Course complete! 🎸') }));
+    // practice: trainers that never run out, with levels
+    const practice = el('section.l-unit', null,
+      el('div.l-unithead', null, el('span.l-unum', { text: '∞' }), el('div', null, el('h3', { text: L2('Práctica', 'Practice') }), el('p', { text: L2('Entrenadores con niveles y práctica eterna, improvisación libre y cambios de acordes.', 'Trainers with levels and endless practice, free improvisation and chord changes.') }))),
+      el('div.l-cards', null,
+        ...Object.entries(TRAINERS).map(([k, T]) => {
+          const t = tp(k);
+          const total = T.levels.reduce((a, _, i) => a + (t.lv[i] || 0), 0);
+          return el('button.l-card.l-trcard', { onclick: () => renderTrainerHome(k) },
+            el('b', { text: T.icon + ' ' + L2(T.title[0], T.title[1]) }),
+            el('small', { text: L2(T.desc[0], T.desc[1]) }),
+            el('span.l-trprog', { text: `★ ${total}/${T.levels.length * 3}` + (t.best ? ' · ' + L2('récord ', 'record ') + t.best : '') + (T.live ? ' · 🎸' : '') }));
+        }),
+        el('button.l-card.l-trcard', { onclick: renderJamHome }, el('b', { text: '🎶 ' + L2('Improvisar', 'Improvise') }), el('small', { text: L2('Bases para tocar lo que quieras, con la escala en el mástil y tus notas en vivo.', 'Backing tracks to play whatever you want, with the scale on the neck and your notes live.') }), el('span.l-trprog', { text: JAMS.length + L2(' bases · 🎸', ' backing tracks · 🎸') })),
+        el('button.l-card.l-trcard', { onclick: renderChangesHome }, el('b', { text: '🔁 ' + L2('Cambios de acordes', 'Chord changes') }), el('small', { text: L2('Elige dos acordes y cámbialos a tiempo en la autopista, cada vez más rápido.', 'Pick two chords and switch between them in time on the highway, faster and faster.') }), el('span.l-trprog', { text: CHANGE_PAIRS.length + L2(' pares', ' pairs') }))));
     const units = COURSE.map((u, ui) => el('section.l-unit', null,
-      el('div.l-unithead', null, el('span.l-unum', { text: String(ui + 1) }), el('div', null, el('h3', { text: u.title }), el('p', { text: u.desc }))),
+      el('div.l-unithead', null, el('span.l-unum', { text: String(ui + 1) }), el('div', null, el('h3', { text: txt(u.title) }), el('p', { text: txt(u.desc) }))),
       el('div.l-cards', null, u.lessons.map((L) => {
         const st = lessonStars(L), p = prog[L.id], isDone = p && p.done;
+        const nEx = exercisesOf(L).length;
         return el('button.l-card' + (isDone ? '.done' : '') + (next === L ? '.next' : ''), { onclick: () => openLesson(L, (p && !isDone && p.page) || 0) },
-          el('b', { text: L.title }),
-          el('small', { text: `${L.min} min · ${exercisesOf(L).length ? exercisesOf(L).length + (exercisesOf(L).length === 1 ? ' ejercicio' : ' ejercicios') : 'teoría'}` }),
-          el('span.l-mini', { 'aria-label': st + ' de 3 estrellas' }, [0, 1, 2].map((i) => el('i' + (i < st ? '.on' : ''), { text: '★' }))));
+          el('b', { text: txt(L.title) }),
+          el('small', { text: `${L.min} min · ${nEx ? nEx + (nEx === 1 ? L2(' ejercicio', ' exercise') : L2(' ejercicios', ' exercises')) : L2('teoría', 'theory')}` }),
+          el('span.l-mini', { 'aria-label': st + ' / 3' }, [0, 1, 2].map((i) => el('i' + (i < st ? '.on' : ''), { text: '★' }))));
       }))));
-    root.replaceChildren(el('div.g-lib.l-course', null, head, el('div.l-scroll', null, hero, ...units)));
+    root.replaceChildren(el('div.g-lib.l-course', { 'data-notr': '' }, head, el('div.l-scroll', null, hero, practice, ...units)));
   }
 
+  function subScreen(title, subtitle, content) {
+    const head = el('header.g-head.l-lhead', null,
+      el('button.g-mode', { onclick: () => { stopTrainers(); renderCourse(); } }, G.icon('back', 16), L2('Lecciones', 'Lessons')),
+      el('div.l-ltitle', null, el('small', { text: subtitle }), el('b', { text: title })),
+      el('div.spacer'),
+      el('button.btn', { onclick: () => G.App.showTuner() }, G.icon('tuner', 15), L2('Afinar', 'Tune')));
+    root.replaceChildren(el('div.l-lesson', { 'data-notr': '' }, head, el('div.l-scroll', null, el('div.l-page', null, ...content))));
+  }
+
+  function renderTrainerHome(kind) {
+    stopTrainers();
+    const T = TRAINERS[kind], t = tp(kind);
+    const lvls = T.levels.map((lv, i) => el('button.l-card', { onclick: () => runTrainer(kind, i) },
+      el('b', { text: L2('Nivel ', 'Level ') + (i + 1) }), el('small', { text: lvName(lv) }),
+      el('span.l-mini', null, [0, 1, 2].map((k) => el('i' + (k < (t.lv[i] || 0) ? '.on' : ''), { text: '★' })))));
+    lvls.push(el('button.l-card.l-endless', { onclick: () => runTrainer(kind, 'endless') }, el('b', { text: '∞ ' + L2('Práctica eterna', 'Endless practice') }),
+      el('small', { text: L2('Sin final. Lo que más te cuesta aparece más seguido.', 'No end. What you miss most comes up more often.') }), el('span.l-trprog', { text: L2('Récord: ', 'Record: ') + (t.best || 0) })));
+    subScreen(L2(T.title[0], T.title[1]), L2('Práctica', 'Practice'), [
+      el('h2', { text: T.icon + ' ' + L2(T.title[0], T.title[1]) }), el('p', { text: L2(T.desc[0], T.desc[1]) }),
+      T.live ? el('p.note', { text: L2('Necesita tu guitarra conectada. Si no la tienes a mano, en «Encuentra la nota» también puedes tocar el traste en el dibujo.', 'Needs your guitar plugged in. Without it, in «Find the note» you can also click the fret in the drawing.') }) : null,
+      el('p.note', { text: L2('Cada ronda son 10 preguntas: 3 estrellas con 95 % de aciertos.', 'Each round is 10 questions: 3 stars at 95% right.') }),
+      el('div.l-cards', null, lvls)]);
+  }
+  function runTrainer(kind, level) {
+    const T = TRAINERS[kind];
+    subScreen(L2(T.title[0], T.title[1]), level === 'endless' ? L2('Práctica eterna', 'Endless practice') : L2('Nivel ', 'Level ') + (level + 1), [trainer({ kind, level, onExit: () => renderTrainerHome(kind) })]);
+  }
+
+  function renderJamHome() {
+    stopTrainers();
+    subScreen(L2('Improvisar', 'Improvise'), L2('Práctica', 'Practice'), [
+      el('h2', { text: '🎶 ' + L2('Improvisación libre', 'Free improvisation') }),
+      el('p', null, ...rich(L2('Elige una base. Suena en loop, con batería, guitarra y bajo; en el mástil ves la escala y, mientras tocas, **se ilumina dónde está cada nota que tocas**.', 'Pick a backing track. It loops with drums, guitar and bass; the neck shows the scale and, as you play, **every note you play lights up where it is**.'))),
+      el('div.l-tip', null, el('b', { text: L2('Para empezar', 'To start') }), el('p', null, ...rich(L2('Pocas notas, bien tocadas. Repite una idea dos veces y cámbiala la tercera. Termina las frases en una nota con anillo.', 'Few notes, played well. Repeat an idea twice and change it the third time. End phrases on a ringed note.')))),
+      el('div.l-cards', null, JAMS.map((J) => el('button.l-card', { onclick: () => openJam(J, renderJamHome) },
+        el('b', { text: L2(J.title[0], J.title[1]) }), el('small', { text: `${L2(J.scaleName[0], J.scaleName[1])} · ${J.bpm} BPM` }), el('span.l-trprog', { text: J.prog.slice(0, 4).map(chordLabel).join(' – ') + (J.prog.length > 4 ? ' …' : '') }))))]);
+  }
+
+  function renderChangesHome() {
+    stopTrainers();
+    let bpm = 70, per = 2;
+    const list = el('div.l-cards');
+    const draw = () => list.replaceChildren(...CHANGE_PAIRS.map((pair) => {
+      const key = 'chg:' + pair.join('-');
+      const st = (prog.chg || {})[key] || 0;
+      return el('button.l-card', { onclick: () => startChanges(pair, bpm, per) },
+        el('b', { text: pair.map(chordLabel).join(' ↔ ') }),
+        el('span.l-mini', null, [0, 1, 2].map((k) => el('i' + (k < st ? '.on' : ''), { text: '★' }))));
+    }));
+    draw();
+    subScreen(L2('Cambios de acordes', 'Chord changes'), L2('Práctica', 'Practice'), [
+      el('h2', { text: '🔁 ' + L2('Cambios de acordes', 'Chord changes') }),
+      el('p', null, ...rich(L2('Lo que más frena al principio no son los acordes: son **los cambios**. Elige un par y cámbialo a tiempo durante 16 compases. Cuando salga con 3 estrellas, súbele el tempo.', "What holds you back at first isn't the chords: it's **the changes**. Pick a pair and switch in time for 16 bars. When you get 3 stars, raise the tempo."))),
+      el('div.row', null,
+        el('label.g-lab', null, L2('Tempo', 'Tempo'), el('select.g-select', { onchange: (e) => { bpm = +e.target.value; } }, [50, 60, 70, 80, 90, 100, 120].map((v) => el('option', { value: v, selected: v === bpm, text: v + ' BPM' })))),
+        el('label.g-lab', null, L2('Rasgueos por acorde', 'Strums per chord'), el('select.g-select', { onchange: (e) => { per = +e.target.value; } },
+          [[4, L2('1 (redonda)', '1 (whole)')], [2, L2('2 (blancas)', '2 (halves)')], [1, L2('4 (negras)', '4 (quarters)')]].map(([v, t]) => el('option', { value: v, selected: v === per, text: t }))))),
+      list]);
+  }
+  function startChanges(pair, bpm, per) {
+    const x = changesExercise(pair, bpm, per);
+    const chart = buildChart(x, x.label);
+    G.Game.openLesson({
+      title: L2('Cambios: ', 'Changes: ') + x.label + ` · ${bpm} BPM`, lessonId: '#changes', data: chart.data, audio: chart.audio,
+      onResult: ({ stars }) => { prog.chg = prog.chg || {}; const key = 'chg:' + pair.join('-'); if (stars > (prog.chg[key] || 0)) { prog.chg[key] = stars; save(); } return stars === 3 && bpm < 120 ? { next: () => startChanges(pair, bpm + 10, per), nextLabel: L2('Más rápido: ', 'Faster: ') + (bpm + 10) + ' BPM' } : null; },
+    });
+  }
+  Lessons.backTo = function (id) { if (id === '#changes') return renderChangesHome(); return Lessons.show(root, id); };
+
+  // ------------------------------------------------------------------ a lesson
   function openLesson(L, page) {
-    stopSound();
+    stopTrainers();
     current = { L, page: Math.max(0, Math.min(page || 0, L.pages.length - 1)) };
     renderLesson();
   }
 
   function renderLesson() {
+    stopTrainers();
     const { L } = current;
     const p = lp(L.id);
     p.page = current.page;
@@ -886,21 +1543,21 @@
     const pg = L.pages[current.page];
     const last = current.page === L.pages.length - 1;
     const idx = ALL.indexOf(L);
-    const dots = el('div.l-dots', null, L.pages.map((x, i) => el('button' + (i === current.page ? '.on' : i < current.page ? '.seen' : ''), { 'aria-label': 'Página ' + (i + 1) + ': ' + x.title, title: x.title, onclick: () => { current.page = i; renderLesson(); } })));
+    const dots = el('div.l-dots', null, L.pages.map((x, i) => el('button' + (i === current.page ? '.on' : i < current.page ? '.seen' : ''), { 'aria-label': (i + 1) + ': ' + txt(x.title), title: txt(x.title), onclick: () => { current.page = i; renderLesson(); } })));
     const head = el('header.g-head.l-lhead', null,
-      el('button.g-mode', { title: 'Volver a las lecciones', onclick: () => { stopSound(); renderCourse(); } }, G.icon('back', 16), 'Lecciones'),
-      el('div.l-ltitle', null, el('small', { text: L.unit.title }), el('b', { text: L.title })),
+      el('button.g-mode', { title: L2('Volver a las lecciones', 'Back to the lessons'), onclick: () => { stopTrainers(); renderCourse(); } }, G.icon('back', 16), L2('Lecciones', 'Lessons')),
+      el('div.l-ltitle', null, el('small', { text: txt(L.unit.title) }), el('b', { text: txt(L.title) })),
       dots,
       el('div.spacer'),
-      el('button.btn', { onclick: () => G.App.showTuner() }, G.icon('tuner', 15), 'Afinar'));
-    const body = el('article.l-page', { 'data-notr': '' }, el('h2', { text: pg.title }), ...pg.blocks.map((b) => renderBlock(b, L)));
+      el('button.btn', { onclick: () => G.App.showTuner() }, G.icon('tuner', 15), L2('Afinar', 'Tune')));
+    const body = el('article.l-page', null, el('h2', { text: txt(pg.title) }), ...pg.blocks.map((b) => renderBlock(b, L)));
     const nav = el('footer.l-nav', null,
-      el('button.btn', { disabled: current.page === 0 && idx === 0, onclick: () => { if (current.page > 0) { current.page--; renderLesson(); } else openLesson(ALL[idx - 1], ALL[idx - 1].pages.length - 1); } }, '← Atrás'),
-      el('span.l-pageof', { text: `${current.page + 1} de ${L.pages.length}` }),
+      el('button.btn', { disabled: current.page === 0 && idx === 0, onclick: () => { if (current.page > 0) { current.page--; renderLesson(); } else openLesson(ALL[idx - 1], ALL[idx - 1].pages.length - 1); } }, L2('← Atrás', '← Back')),
+      el('span.l-pageof', { text: `${current.page + 1} ${L2('de', 'of')} ${L.pages.length}` }),
       last
-        ? el('button.btn.primary', { onclick: () => finishLesson(L) }, ALL[idx + 1] ? 'Terminar y seguir →' : 'Terminar el curso')
-        : el('button.btn.primary', { onclick: () => { current.page++; renderLesson(); } }, 'Siguiente →'));
-    root.replaceChildren(el('div.l-lesson', null, head, el('div.l-scroll', null, body), nav));
+        ? el('button.btn.primary', { onclick: () => finishLesson(L) }, ALL[idx + 1] ? L2('Terminar y seguir →', 'Finish and continue →') : L2('Terminar el curso', 'Finish the course'))
+        : el('button.btn.primary', { onclick: () => { current.page++; renderLesson(); } }, L2('Siguiente →', 'Next →')));
+    root.replaceChildren(el('div.l-lesson', { 'data-notr': '' }, head, el('div.l-scroll', null, body), nav));
     root.querySelector('.l-scroll').scrollTop = 0;
   }
 
@@ -908,10 +1565,9 @@
     const p = lp(L.id);
     p.done = true; p.page = 0;
     save();
-    const exs = exercisesOf(L);
-    const missing = exs.filter((x) => !(p.ex[x.id] > 0));
-    if (missing.length) G.toast(`Lección hecha. Te ${missing.length === 1 ? 'falta 1 ejercicio' : `faltan ${missing.length} ejercicios`} por estrellas: vuelve cuando quieras.`);
-    else G.toast('¡Lección completa!');
+    const missing = exercisesOf(L).filter((x) => !(p.ex[x.id] > 0)).length;
+    if (missing) G.toast(L2(`Lección hecha. Te ${missing === 1 ? 'falta 1 ejercicio' : `faltan ${missing} ejercicios`} por estrellas: vuelve cuando quieras.`, `Lesson done. ${missing === 1 ? '1 exercise is' : missing + ' exercises are'} still waiting for stars: come back any time.`));
+    else G.toast(L2('¡Lección completa!', 'Lesson complete!'));
     const idx = ALL.indexOf(L);
     if (ALL[idx + 1]) openLesson(ALL[idx + 1], 0); else renderCourse();
   }
@@ -919,14 +1575,14 @@
   // ------------------------------------------------------------------ blocks
   function renderBlock(b, L) {
     if (b.p) return el('p', null, ...rich(b.p));
-    if (b.tip) return el('div.l-tip', null, el('b', { text: 'Truco' }), el('p', null, ...rich(b.tip)), b.tune ? el('button.btn', { onclick: () => G.App.showTuner() }, G.icon('tuner', 14), 'Abrir el afinador') : null);
-    if (b.tune) return el('div.row', null, el('button.btn', { onclick: () => G.App.showTuner() }, G.icon('tuner', 14), 'Abrir el afinador'));
-    if (b.fun) return el('div.l-fun', null, el('b', { text: 'Dato curioso' }), el('p', null, ...rich(b.fun)));
-    if (b.fret) return el('figure.l-fig', null, fretboard(b.fret), el('figcaption', { text: 'Toca un punto para escucharlo.' }));
-    if (b.chords) return el('figure.l-fig', null, el('div.l-chords', null, b.chords.map((c) => el('button.l-chordbtn', { title: 'Escuchar ' + chordLabel(c), onclick: () => hearChord(c) }, chordBox(c)))), el('figcaption', { text: 'Toca un acorde para escucharlo.' }));
+    if (b.tip) return el('div.l-tip', null, el('b', { text: L2('Truco', 'Tip') }), el('p', null, ...rich(b.tip)), b.tune ? el('button.btn', { onclick: () => G.App.showTuner() }, G.icon('tuner', 14), L2('Abrir el afinador', 'Open the tuner')) : null);
+    if (b.tune) return el('div.row', null, el('button.btn', { onclick: () => G.App.showTuner() }, G.icon('tuner', 14), L2('Abrir el afinador', 'Open the tuner')));
+    if (b.fun) return el('div.l-fun', null, el('b', { text: L2('Dato curioso', 'Fun fact') }), el('p', null, ...rich(b.fun)));
+    if (b.fret) return el('figure.l-fig', null, fretboard(b.fret), el('figcaption', { text: L2('Toca un punto para escucharlo.', 'Click a dot to hear it.') }));
+    if (b.chords) return el('figure.l-fig', null, el('div.l-chords', null, b.chords.map((c) => el('button.l-chordbtn', { title: L2('Escuchar ', 'Hear ') + chordLabel(c), onclick: () => hearChord(c) }, chordBox(c)))), el('figcaption', { text: L2('Toca un acorde para escucharlo.', 'Click a chord to hear it.') }));
     if (b.tab) return el('figure.l-fig', null, tab(b.tab));
-    if (b.listenSeq) return el('div.l-listen', null, listenBtn(b.label || 'Escuchar', () => hearSeq(Object.assign({ bpm: 90 }, b.listenSeq))));
-    if (b.listen) return el('div.l-listen', null, b.listen.map((x) => listenBtn(x.label, () => {
+    if (b.listenSeq) return el('div.l-listen', null, listenBtn(txt(b.label || 'Escuchar'), () => hearSeq(Object.assign({ bpm: 90 }, b.listenSeq))));
+    if (b.listen) return el('div.l-listen', null, b.listen.map((x) => listenBtn(txt(x.label), () => {
       if (x.chord) hearChord(x.chord);
       else if (x.chords) playGuide(x.chords.map((c, i) => ({ t: i * 1.2, p: chordPitches(c), d: 1.1 })));
       else if (x.seq) hearSeq(x.seq);
@@ -934,8 +1590,10 @@
       else hearNotes(x.notes, 0.6);
     })));
     if (b.quiz) return renderQuiz(b.quiz, L);
-    if (b.gen === 'fretNote') return genFretQuiz(b);
-    if (b.gen === 'earInterval') return genEarQuiz(b);
+    if (b.trainer) return trainer({ kind: b.trainer, level: b.level || 0, count: b.count || 8, inline: true });
+    if (b.jam) { const J = JAMS.find((j) => j.id === b.jam); return el('div.l-ex', null, el('div.l-exhead', null, el('div', null, el('b', { text: '🎶 ' + L2('Improvisa: ', 'Improvise: ') + L2(J.title[0], J.title[1]) }), el('small', { text: L2(J.scaleName[0], J.scaleName[1]) + ` · ${J.bpm} BPM` }))),
+      el('p.note', { text: L2('Una base en loop para tocar lo que quieras. Te muestro la escala y dónde cae cada nota que tocas.', 'A looping backing track to play whatever you want. I show you the scale and where every note you play lands.') }),
+      el('div.row', null, el('button.btn.primary', { onclick: () => { const keep = current; openJam(J, () => { current = keep; renderLesson(); }); } }, G.icon('play', 13), L2('Improvisar', 'Improvise')))); }
     if (b.play) return renderExercise(b.play, L);
     return null;
   }
@@ -950,101 +1608,40 @@
       const answered = p.quiz[key];
       const btns = q.options.map((o, oi) => el('button.l-opt', { onclick: () => {
         btns.forEach((b, bi) => { b.disabled = true; b.classList.toggle('right', bi === q.answer); b.classList.toggle('wrong', bi === oi && oi !== q.answer); });
-        why.replaceChildren(el('b', { text: oi === q.answer ? '¡Bien! ' : 'Casi. ' }), ...rich(q.why || ''));
+        why.replaceChildren(el('b', { text: oi === q.answer ? L2('¡Bien! ', 'Right! ') : L2('Casi. ', 'Not quite. ') }), ...rich(q.why || ''));
         p.quiz[key] = oi === q.answer ? 1 : -1; save();
-      } }, o));
+      } }, txt(o)));
       if (answered) { btns.forEach((b, bi) => { b.classList.toggle('right', bi === q.answer); }); why.replaceChildren(...rich(q.why || '')); }
       box.append(el('p.l-qq', null, ...rich(q.q)), el('div.l-opts', null, btns), why);
       return box;
     }));
   }
 
-  /** «Which note is this?» on the strings you choose, new questions every time. */
-  function genFretQuiz(cfg) {
-    const box = el('div.l-quiz.l-gen');
-    let n = 0, right = 0;
-    const naturals = [0, 2, 4, 5, 7, 9, 11];
-    function ask() {
-      if (n >= (cfg.count || 8)) {
-        box.replaceChildren(el('p.l-score', { text: `${right} de ${n}. ` + (right === n ? '¡Perfecto!' : right >= n * 0.7 ? 'Muy bien.' : 'Repasa el diagrama y prueba otra vez.') }),
-          el('button.btn', { onclick: () => { n = 0; right = 0; ask(); } }, 'Otra ronda'));
-        return;
-      }
-      let s, f, pc;
-      do { s = cfg.strings[Math.floor(Math.random() * cfg.strings.length)]; f = Math.floor(Math.random() * 13); pc = midiOf(s, f) % 12; } while (!naturals.includes(pc));
-      const opts = new Set([pc]);
-      while (opts.size < 4) opts.add(naturals[Math.floor(Math.random() * 7)]);
-      const list = [...opts].sort(() => Math.random() - 0.5);
-      const fb = fretboard({ to: 12, marks: [{ s, f, label: '?' }] });
-      const why = el('p.l-why');
-      const btns = list.map((o) => el('button.l-opt', { onclick: () => {
-        n++; if (o === pc) right++;
-        btns.forEach((b, i) => { b.disabled = true; b.classList.toggle('right', list[i] === pc); b.classList.toggle('wrong', list[i] === o && o !== pc); });
-        why.textContent = `Cuerda ${s}, traste ${f}: ${both(pc)}.`;
-        hearNotes([midiOf(s, f)]);
-        setTimeout(ask, 1300);
-      } }, both(o)));
-      box.replaceChildren(el('p.l-qq', { text: `Pregunta ${n + 1} de ${cfg.count || 8}: ¿qué nota es?` }), fb, el('div.l-opts', null, btns), why);
-    }
-    ask();
-    return box;
-  }
-
-  /** Hear two notes, say the interval. */
-  function genEarQuiz(cfg) {
-    const SET = [[3, '3ª menor'], [4, '3ª mayor'], [5, '4ª justa'], [7, '5ª justa'], [12, 'Octava']];
-    const box = el('div.l-quiz.l-gen');
-    let n = 0, right = 0;
-    function ask() {
-      if (n >= (cfg.count || 6)) {
-        box.replaceChildren(el('p.l-score', { text: `${right} de ${n}. ` + (right === n ? '¡Tienes oído!' : 'El oído se entrena: vuelve a escuchar los ejemplos y prueba otra ronda.') }),
-          el('button.btn', { onclick: () => { n = 0; right = 0; ask(); } }, 'Otra ronda'));
-        return;
-      }
-      const [st, name] = SET[Math.floor(Math.random() * SET.length)];
-      const low = 48 + Math.floor(Math.random() * 8);
-      const play = () => hearNotes([low, low + st], 0.7);
-      const why = el('p.l-why');
-      const btns = SET.map(([s2, n2]) => el('button.l-opt', { onclick: () => {
-        n++; if (s2 === st) right++;
-        btns.forEach((b, i) => { b.disabled = true; b.classList.toggle('right', SET[i][0] === st); b.classList.toggle('wrong', SET[i][0] === s2 && s2 !== st); });
-        why.textContent = 'Era ' + name + '.';
-        setTimeout(ask, 1300);
-      } }, n2));
-      box.replaceChildren(el('p.l-qq', { text: `Pregunta ${n + 1} de ${cfg.count || 6}: ¿qué intervalo es?` }), listenBtn('Escuchar de nuevo', play), el('div.l-opts', null, btns), why);
-      setTimeout(play, 200);
-    }
-    const start = el('button.btn.primary', { onclick: () => ask() }, 'Empezar (con sonido)');
-    box.append(el('p.l-qq', { text: 'Vas a escuchar dos notas. ¿Qué distancia hay entre ellas?' }), start);
-    return box;
-  }
-
   function renderExercise(x, L) {
     const p = lp(L.id);
     const st = p.ex[x.id] || 0;
-    const preview = tab(x, 2);
     return el('div.l-ex', null,
       el('div.l-exhead', null,
-        el('div', null, el('b', { text: x.label }), el('small', { text: `${x.bpm} pulsos por minuto` + (x.note ? ' · ' + x.note : '') })),
-        el('span.l-mini', { 'aria-label': st + ' de 3 estrellas' }, [0, 1, 2].map((i) => el('i' + (i < st ? '.on' : ''), { text: '★' })))),
-      preview,
+        el('div', null, el('b', { text: txt(x.label) }), el('small', { text: `${x.bpm} ${L2('pulsos por minuto', 'beats per minute')}` + (x.note ? ' · ' + txt(x.note) : '') })),
+        el('span.l-mini', { 'aria-label': st + ' / 3' }, [0, 1, 2].map((i) => el('i' + (i < st ? '.on' : ''), { text: '★' })))),
+      tab(x, 2),
       el('div.row', null,
-        el('button.btn.primary', { onclick: () => startExercise(x, L) }, G.icon('play', 13), st ? 'Tocar de nuevo' : 'Tocar'),
-        listenBtn('Escuchar primero', () => hearSeq(Object.assign({}, x, { countIn: 0 })))));
+        el('button.btn.primary', { onclick: () => startExercise(x, L) }, G.icon('play', 13), st ? L2('Tocar de nuevo', 'Play again') : L2('Tocar', 'Play')),
+        listenBtn(L2('Escuchar primero', 'Listen first'), () => hearSeq(Object.assign({}, x, { countIn: 0 })))));
   }
 
   function startExercise(x, L) {
-    stopSound();
-    const chart = buildChart(x, x.label);
+    stopTrainers();
+    const chart = buildChart(x, txt(x.label));
     const exs = exercisesOf(L);
     const i = exs.indexOf(x);
     G.Game.openLesson({
-      title: L.title + ' · ' + x.label, lessonId: L.id, data: chart.data, audio: chart.audio,
+      title: txt(L.title) + ' · ' + txt(x.label), lessonId: L.id, data: chart.data, audio: chart.audio,
       onResult: ({ stars }) => {
         const p = lp(L.id);
         if (stars > (p.ex[x.id] || 0)) { p.ex[x.id] = stars; save(); }
         const nx = exs[i + 1];
-        if (nx) return { next: () => startExercise(nx, L), nextLabel: 'Siguiente: ' + nx.label };
+        if (nx) return { next: () => startExercise(nx, L), nextLabel: L2('Siguiente: ', 'Next: ') + txt(nx.label) };
         return null;
       },
     });

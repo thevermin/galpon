@@ -2052,7 +2052,7 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
         gamePack.reset();
         return ok();
     }
-    if (! game.isLoaded()) return fail ("No hay ninguna canción abierta en el juego");
+    if (! game.isLoaded() && cmd != "gameGuitar") return fail ("No hay ninguna canción abierta en el juego");
     if (cmd == "gamePlay")
     {
         if (engine.isRecording()) return fail (juce::String (u8"Primero detén la grabación del estudio"));
