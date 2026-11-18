@@ -2828,6 +2828,27 @@ static void testStress()
 
 /** Game mode with the audio running: open and close songs, play, jump, change speed, loop,
     listen, switch sounds, all at random, as fast as a person never would. */
+static void testLessonExercise()
+{
+    std::cout << "Ejercicio de lección: click, batería y guitarra guía armados al vuelo\n";
+    TestEngine t;
+    const auto args = juce::JSON::parse (R"({"length":6,"data":{"arrangements":{"leccion":{"name":"Lección","notes":[{"t":2.0,"s":0,"f":0}]}}},
+        "clicks":[{"t":0,"a":true},{"t":0.5,"a":false}],"drums":[{"t":2,"k":"k"},{"t":2.5,"k":"s"},{"t":2.25,"k":"h"}],
+        "guide":[{"t":2.0,"p":[40],"d":0.8},{"t":3.0,"p":[40,47,52],"d":0.8,"m":false}]})");
+    auto r = t.api.call ("gameOpenLesson", args);
+    CHECK ((bool) r["ok"], "abre el ejercicio (" << r["error"].toString() << ")");
+    CHECK (r["data"]["stems"].size() == 3, "trae click, batería y guía (" << r["data"]["stems"].size() << ")");
+    CHECK (std::abs ((double) r["data"]["length"] - 6.0) < 0.05, "dura lo que pidió");
+    CHECK (r["data"]["arrangements"]["leccion"]["notes"].size() == 1, "devuelve la partitura");
+    t.api.call ("gameStem", juce::JSON::parse (R"({"id":"drums","on":false})"));
+    t.api.call ("gamePlay", {});
+    juce::AudioBuffer<float> out (2, 512);
+    float peak = 0;
+    for (int i = 0; i < 48000 * 4 / 512; ++i) { out.clear(); t.engine.renderOffline (out, 512); peak = std::max (peak, out.getMagnitude (0, 512)); }
+    CHECK (peak > 0.01f, "suena (" << peak << ")");
+    CHECK ((bool) t.api.call ("gameClose", {})["ok"], "y se cierra");
+}
+
 static void testGameStress()
 {
     std::cout << "Estrés del juego: abrir canciones y tocar con el audio andando\n";
@@ -2956,6 +2977,7 @@ int main()
     testNoteDetection();
     testStress();
     testGameStress();
+    testLessonExercise();
     std::cout << "\n" << (checks - failures) << " de " << checks << " pruebas OK\n";
     return failures == 0 ? 0 : 1;
 }

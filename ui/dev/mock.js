@@ -141,6 +141,8 @@
       case 'gameImport': return ok({ count: 0, error: '' });
       case 'gameAddFolder': return ok();
       case 'gameOpen': gm.open = true; gm.pos = 0; gm.playing = false; gm.ended = false; return ok(gameData());
+      case 'gameOpenLesson': gm.open = true; gm.pos = 0; gm.playing = false; gm.ended = false; gm.length = a.length; gm.events = null;
+        return ok(Object.assign({}, a.data, { stems: [{ id: 'click', name: 'Click', enabled: true, gain: 1 }, { id: 'guitar', name: 'Guitarra guía', enabled: true, gain: 1 }], musicStart: 0, length: a.length }));
       case 'gameClose': gm.open = false; gm.playing = false; return ok();
       case 'gamePlay': gm.playing = true; gm.ended = false; playing = false; return ok();
       case 'gamePause': gm.playing = false; return ok();

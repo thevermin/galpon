@@ -89,7 +89,15 @@
     document.body.classList.add('in-game');
     root.classList.remove('hidden');
     if (G.tick && G.tick.playing) G.call('stop');
-    if (play) renderPlay(); else await showLibrary();
+    if (play) renderPlay(); else if (store.get('tab', 'songs') === 'lessons' && G.Lessons) G.Lessons.show(root); else await showLibrary();
+  };
+  Game.showLibrary = () => { store.set('tab', 'songs'); return showLibrary(); };
+  Game.root = () => ensureRoot();
+  /** The tabs on top of the library and the lessons: songs | lessons. */
+  Game.tabs = function (which) {
+    return el('div.seg.g-tabs', { role: 'group', 'aria-label': 'Juego' },
+      el('button' + (which === 'songs' ? '.on' : ''), { 'aria-pressed': String(which === 'songs'), onclick: () => { if (which !== 'songs') Game.showLibrary(); } }, 'Canciones'),
+      el('button' + (which === 'lessons' ? '.on' : ''), { 'aria-pressed': String(which === 'lessons'), onclick: () => { if (which !== 'lessons') { store.set('tab', 'lessons'); G.Lessons.show(root); } } }, 'Lecciones'));
   };
   Game.leave = function () {
     if (play) G.call('gamePause');
@@ -129,6 +137,7 @@
     const head = el('header.g-head', null,
       el('button.g-mode', { title: 'Volver al estudio', onclick: Game.leave }, G.icon('back', 16), 'Estudio'),
       el('h1', { text: 'Juego' }),
+      Game.tabs('songs'),
       el('input.text.g-search', { type: 'search', placeholder: 'Buscar canción o artista', value: opts.query, 'aria-label': 'Buscar',
         oninput: (e) => { opts.query = e.target.value; renderGrid(); } }),
       el('div.seg', { role: 'group', 'aria-label': 'Filtrar' },
@@ -233,6 +242,28 @@
     applyTheirGain();
     if (!store.get('seenHelp', false)) { store.set('seenHelp', true); showHelp(); }
   }
+
+  /** A lesson's exercise on the highway: the lesson makes the chart and the audio (click, drums, a
+      guide guitar), the game does the rest (listening, points, speed, repeating). */
+  Game.openLesson = async function (lesson) {
+    ensureRoot();
+    stopDrawing();
+    hideEnd();
+    root.replaceChildren(el('div.g-loading', null, el('b', { text: lesson.title }), el('span', { text: 'Preparando el ejercicio…' })));
+    await new Promise((res) => setTimeout(res, 30));
+    const r = await G.call('gameOpenLesson', Object.assign({ data: lesson.data }, lesson.audio));
+    if (!r || !r.ok) { G.toast((r && r.error) || 'No se pudo abrir el ejercicio', true); return G.Lessons.show(root); }
+    const d = r.data;
+    play = { song: { title: lesson.title }, lesson, data: d, ids: Object.keys(d.arrangements), length: d.length, stems: d.stems || [], pos: 0, playing: false, speed: lesson.speed || 1,
+      loop: null, markA: null, guitar: null, ended: false, master: 1, tone: null, toneName: '', listening: false };
+    setArrangement(play.ids[0]);
+    const g = await G.call('gameGuitar', {});
+    if (g && g.ok) play.guitar = g.data;
+    if (play.speed !== 1) G.call('gameSpeed', { speed: play.speed });
+    renderPlay();
+    sendNotes();
+    if (opts.autoTone && play.guitar) setAutoTone(true, true);
+  };
 
   /** The song's own guitar (or bass) at the level you left it last time. */
   function applyDuck() { const db = store.get('duckDb', DUCK_MAX); G.call('gameDuck', { db: db >= DUCK_MAX ? 60 : db }); }
@@ -1100,8 +1131,9 @@
     clearTimeout(t3Timer);
     panel = null;
     await G.call('gameClose');
+    const lesson = play && play.lesson;
     play = null;
-    showLibrary();
+    if (lesson && G.Lessons) G.Lessons.show(root, lesson.lessonId); else showLibrary();
   }
 
   // ------------------------------------------------------------------ clock: smooth position between ticks
@@ -2070,6 +2102,7 @@
   function showEnd() {
     if (!play || !play.ended) return;
     hideEnd();
+    if (play.lesson) return showLessonEnd();
     const p = play, sc = p.score;
     const listened = sc.judged > 0;
     const body = [el('h2', { text: '¡Terminaste ' + p.song.title + '!' })];
@@ -2121,6 +2154,40 @@
     root.querySelector('.g-stage').append(endBox);
   }
   function hideEnd() { if (endBox) endBox.remove(); endBox = null; }
+
+  /** End of a lesson exercise: stars, a word about how it went, and what to do next. */
+  function showLessonEnd() {
+    const p = play, sc = p.score, L = p.lesson;
+    const listened = sc.judged > 0;
+    const acc = listened ? sc.hits / sc.judged : 0;
+    const stars = !listened ? 0 : acc >= 0.95 ? 3 : acc >= 0.8 ? 2 : acc >= 0.6 ? 1 : 0;
+    const res = L.onResult ? L.onResult({ acc, stars, speed: p.speed, listened }) : null;
+    const msg = !listened ? (p.guitar ? 'No te escuché tocar: fíjate que la barrita de «Tu sonido» se mueva cuando tocas.' : 'Para escucharte, elige tu guitarra en «Tu sonido». Igual puedes seguir con la lección.')
+      : stars === 3 ? (p.speed < 1 ? '¡Perfecto! Ahora prueba un poco más rápido.' : '¡Impecable! Esto ya es tuyo.')
+      : stars === 2 ? 'Muy bien. Un par de vueltas más y queda perfecto.'
+      : stars === 1 ? 'Vas bien. Prueba más despacio: la velocidad llega sola, la precisión no.'
+      : 'Todavía cuesta, y es normal. Bájale la velocidad a 70 % y vuelve a intentar.';
+    const body = [
+      el('h2', { text: L.title }),
+      el('div.l-stars', { 'aria-label': stars + ' de 3 estrellas' }, [0, 1, 2].map((i) => el('span' + (i < stars ? '.on' : ''), { text: '★' }))),
+      listened ? el('div.g-res-top', null, hudCell('Precisión', Math.round(acc * 100) + ' %'), hudCell('Mejor racha', String(sc.best)), hudCell('Notas', sc.hits + ' de ' + sc.judged), hudCell('Velocidad', Math.round(p.speed * 100) + ' %')) : null,
+      el('p', { text: msg }),
+    ];
+    const again = (speed) => {
+      hideEnd(); resetScore(); updateScoreHud();
+      if (speed && speed !== p.speed) { p.speed = speed; ui.speed.value = speed; G.call('gameSpeed', { speed }); }
+      seek(0); G.call('gamePlay'); p.playing = true; updateControls();
+    };
+    body.push(el('div.row', null,
+      el('button.btn' + (stars >= 2 ? '' : '.primary'), { onclick: () => again() }, 'Otra vez'),
+      stars < 2 && p.speed > 0.6 ? el('button.btn', { onclick: () => again(Math.max(0.5, Math.round((p.speed - 0.2) * 10) / 10)) }, 'Más despacio') : null,
+      stars === 3 && p.speed < 1 ? el('button.btn', { onclick: () => again(Math.min(1, Math.round((p.speed + 0.2) * 10) / 10)) }, 'Más rápido') : null,
+      res && res.next ? el('button.btn' + (stars >= 2 ? '.primary' : ''), { onclick: () => { hideEnd(); res.next(); } }, res.nextLabel || 'Seguir') : null,
+      el('button.btn', { onclick: closeSong }, 'Volver a la lección')));
+    endBox = el('div.g-end', { role: 'dialog', 'aria-label': 'Cómo te fue' }, body);
+    root.querySelector('.g-stage').append(endBox);
+  }
+  Game.closeLesson = () => closeSong();
 
   // ------------------------------------------------------------------ keys
   Game.onKey = function (e) {

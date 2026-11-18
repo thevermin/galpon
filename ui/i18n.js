@@ -14,6 +14,29 @@
     location.reload();
   };
   const EN = {
+"Canciones": "Songs",
+"Lecciones": "Lessons",
+"Preparando el ejercicio…": "Getting the exercise ready…",
+"No se pudo abrir el ejercicio": "Couldn't open the exercise",
+"Para escucharte, elige tu guitarra en «Tu sonido». Igual puedes seguir con la lección.": "To hear you, choose your guitar in «Your sound». You can keep going with the lesson anyway.",
+"¡Perfecto! Ahora prueba un poco más rápido.": "Perfect! Now try it a bit faster.",
+"¡Impecable! Esto ya es tuyo.": "Flawless! You've got this.",
+"Muy bien. Un par de vueltas más y queda perfecto.": "Very good. A couple more times and it'll be perfect.",
+"Vas bien. Prueba más despacio: la velocidad llega sola, la precisión no.": "You're doing well. Try it slower: speed comes on its own, accuracy doesn't.",
+"Todavía cuesta, y es normal. Bájale la velocidad a 70 % y vuelve a intentar.": "It's still hard, and that's normal. Drop the speed to 70% and try again.",
+"Más despacio": "Slower",
+"Más rápido": "Faster",
+"Volver a la lección": "Back to the lesson",
+"Volver a las lecciones": "Back to the lessons",
+"Empezar": "Start",
+"Aprende guitarra tocando": "Learn guitar by playing",
+"Sigue donde quedaste, o repite una para sacarle las 3 estrellas.": "Pick up where you left off, or replay one to get all 3 stars.",
+"← Atrás": "← Back",
+"Siguiente →": "Next →",
+"Terminar y seguir →": "Finish and continue →",
+"Terminar el curso": "Finish the course",
+"¡Lección completa!": "Lesson complete!",
+"¡Curso completo! 🎸": "Course complete! 🎸",
 "Compás de la canción": "Song time signature",
 "Cambiar el tempo desde acá…": "Change the tempo from here…",
 "Cambiar el tempo de acá…": "Change this tempo change…",
@@ -1108,6 +1131,30 @@
 "Siesta eléctrica": "Siesta eléctrica"
 };
   const PATTERNS = [
+[
+"^Vas (\\d+) de (\\d+) lecciones$",
+"You've done $1 of $2 lessons"
+],
+[
+"^Seguir: (.*)$",
+"Continue: $1"
+],
+[
+"^Siguiente: (.*)$",
+"Next: $1"
+],
+[
+"^(\\d+) lecciones cortas: teoría que se escucha, preguntas rápidas y ejercicios en la autopista que Galpon corrige\\.$",
+"$1 short lessons: theory you can hear, quick questions, and exercises on the highway that Galpon checks. (Lessons are in Spanish for now.)"
+],
+[
+"^Lección hecha\\. Te (.*) por estrellas: vuelve cuando quieras\\.$",
+"Lesson done. Some exercises are still waiting for stars: come back any time."
+],
+[
+"^(\\d+) de (\\d+)$",
+"$1 of $2"
+],
 [
 "^Compás (\\d+) · ♩(.*?) · (.*?)$",
 "Bar $1 · ♩$2 · $3"

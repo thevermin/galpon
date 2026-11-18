@@ -71,6 +71,15 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 - **Sonido automático**: arma los efectos que pide cada parte (limpio, distorsión, solo…) y los cambia solo. Lee el equipo que trae la canción (el amplificador y sus perillas, pedales, eco, reverb y ecualización) y tiene en cuenta que un Marshall con poca ganancia ya distorsiona y un Fender no. Si la canción no trae el equipo, elige el más parecido de los 20 sonidos de Galpon por el nombre o escuchando la guitarra de la canción. También puedes elegir a mano, para cada parte, uno de los sonidos de Galpon o uno de tus tonos de TONE3000. Si conectas tu cuenta de **TONE3000**, usa las capturas que marcaste como favoritas.
 - Afinador con la afinación y la cejilla de la canción, **afinación virtual** (el puntaje la tiene en cuenta) y ajuste de sincronía.
 
+### Lecciones de guitarra
+
+En el modo Juego, la pestaña **Lecciones**: 35 lecciones cortas en 10 unidades, desde las cuerdas al aire hasta cejillas y Travis picking, pasando por notas del diapasón, acordes abiertos, rasgueos, intervalos, escala mayor, pentatónica y blues, armonía (grados, progresiones, relativos, capo), power chords, palm mute, ligados, slides y bends.
+
+- Teoría corta que **se escucha**: diagramas de acordes, del mástil y tablaturas que suenan con un clic.
+- **Preguntas** al final de cada tema, y juegos que cambian cada vez: adivinar notas en el mástil y reconocer intervalos de oído.
+- **57 ejercicios** que se tocan en la autopista, con click, batería y una guitarra guía. Galpon te escucha y da hasta 3 estrellas; si cuesta, te ofrece bajar la velocidad.
+- El progreso queda guardado y la portada te dice por dónde seguir.
+
 ## Atajos
 
 | Tecla | Acción |

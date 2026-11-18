@@ -214,6 +214,88 @@ static void arrangeSection (Engine& engine, const juce::String& op, double a, do
     song.sortTimeChanges();
 }
 
+//==============================================================================
+/** Audio for a guitar lesson, made up on the spot: a metronome click, a simple drum groove and a
+    plucked guitar that plays what you have to play (so you hear how it goes). 48 kHz stereo. */
+namespace lessonAudio
+{
+    constexpr double rate = 48000.0;
+
+    static void click (juce::AudioBuffer<float>& b, double t, bool accent)
+    {
+        const int at = (int) (t * rate), n = (int) (0.035 * rate);
+        const double f = accent ? 1760.0 : 1320.0;
+        for (int i = 0; i < n && at + i < b.getNumSamples(); ++i)
+        {
+            if (at + i < 0) continue;
+            const float v = (float) (std::sin (juce::MathConstants<double>::twoPi * f * i / rate) * std::exp (-i / (0.006 * rate)) * (accent ? 0.55 : 0.4));
+            b.addSample (0, at + i, v); b.addSample (1, at + i, v);
+        }
+    }
+
+    static void drum (juce::AudioBuffer<float>& b, double t, char kind, juce::Random& rnd)
+    {
+        const int at = (int) (t * rate);
+        const int n = (int) ((kind == 'k' ? 0.35 : kind == 's' ? 0.22 : 0.06) * rate);
+        double phase = 0, lp = 0, prev = 0;
+        for (int i = 0; i < n && at + i < b.getNumSamples(); ++i)
+        {
+            if (at + i < 0) continue;
+            const double x = i / rate;
+            float v = 0;
+            if (kind == 'k')
+            {
+                const double f = 48.0 + 110.0 * std::exp (-x * 28.0);
+                phase += juce::MathConstants<double>::twoPi * f / rate;
+                v = (float) (std::sin (phase) * std::exp (-x * 9.0) * 0.9);
+            }
+            else if (kind == 's')
+            {
+                phase += juce::MathConstants<double>::twoPi * 185.0 / rate;
+                const double noise = rnd.nextDouble() * 2 - 1;
+                lp += 0.35 * (noise - lp);
+                v = (float) ((std::sin (phase) * std::exp (-x * 30.0) * 0.35 + lp * std::exp (-x * 18.0) * 0.55));
+            }
+            else
+            {
+                const double noise = rnd.nextDouble() * 2 - 1;
+                const double hp = noise - prev; prev = noise;   // bright
+                v = (float) (hp * std::exp (-x * 70.0) * 0.16);
+            }
+            b.addSample (0, at + i, v * (kind == 'h' ? 0.8f : 1.0f));
+            b.addSample (1, at + i, v * (kind == 'h' ? 1.0f : 1.0f));
+        }
+    }
+
+    /** Karplus-Strong: a plucked string at `midi`, `dur` seconds (then it's damped). */
+    static void pluck (juce::AudioBuffer<float>& b, double t, int midi, double dur, float gain, bool muted, juce::Random& rnd)
+    {
+        const double f = 440.0 * std::pow (2.0, (midi - 69) / 12.0);
+        const int period = juce::jmax (2, (int) std::round (rate / f));
+        std::vector<float> line ((size_t) period);
+        float last = 0;
+        for (auto& x : line) { const float r = rnd.nextFloat() * 2 - 1; x = 0.5f * (r + last); last = r; }   // a softer pick
+        const int at = (int) (t * rate);
+        const int ring = (int) ((muted ? 0.12 : dur + 0.25) * rate);
+        const int damp = (int) ((muted ? 0.02 : dur) * rate);
+        size_t k = 0;
+        float lp = 0;
+        const double decay = muted ? 0.9 : (midi < 50 ? 0.9985 : 0.997);
+        for (int i = 0; i < ring && at + i < b.getNumSamples(); ++i)
+        {
+            const size_t nk = (k + 1) % line.size();
+            float y = (float) (0.5 * (line[k] + line[nk]) * (i > damp ? 0.985 : decay));
+            line[k] = y;
+            k = nk;
+            lp += 0.6f * (y - lp);
+            if (at + i < 0) continue;
+            const float v = lp * gain;
+            b.addSample (0, at + i, v * 0.9f);
+            b.addSample (1, at + i, v);
+        }
+    }
+}
+
 juce::var EngineApi::slotInfo (const Slot& s) const
 {
     auto* o = new juce::DynamicObject();
@@ -1902,6 +1984,59 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
             d->setProperty ("musicStart", game.musicStart());
             d->setProperty ("length", game.length());
             d->setProperty ("problems", problems.joinIntoString ("\n"));
+        }
+        return ok (data);
+    }
+    if (cmd == "gameOpenLesson")
+    {
+        // a lesson's exercise: {data (like a song's game data), length, clicks:[{t, a}], drums:[{t, k}], guide:[{t, p:[midi], d, m}]}
+        engine.scorer.clearEvents();
+        restoreGameTone();
+        {
+            const juce::ScopedLock sl (engine.lock);
+            game.close();
+        }
+        gamePack.reset();
+        const double length = juce::jlimit (1.0, 600.0, (double) arg (args, "length", 30.0));
+        const int n = (int) (length * lessonAudio::rate);
+        juce::Random rnd (1234);
+        auto clicks = std::make_shared<juce::AudioBuffer<float>> (2, n);
+        auto drums  = std::make_shared<juce::AudioBuffer<float>> (2, n);
+        auto guide  = std::make_shared<juce::AudioBuffer<float>> (2, n);
+        clicks->clear(); drums->clear(); guide->clear();
+        bool anyDrums = false;
+        if (auto* list = arg (args, "clicks", {}).getArray())
+            for (auto& c : *list) lessonAudio::click (*clicks, (double) c["t"], (bool) c["a"]);
+        if (auto* list = arg (args, "drums", {}).getArray())
+            for (auto& d : *list) { anyDrums = true; const auto k = d["k"].toString(); lessonAudio::drum (*drums, (double) d["t"], k.isEmpty() ? 'h' : (char) k[0], rnd); }
+        if (auto* list = arg (args, "guide", {}).getArray())
+            for (auto& g : *list)
+                if (auto* ps = g["p"].getArray())
+                {
+                    const float gain = 0.5f / std::sqrt ((float) juce::jmax (1, ps->size()));
+                    int k = 0;
+                    for (auto& p : *ps)   // a chord is strummed: low to high, a hair apart
+                        lessonAudio::pluck (*guide, (double) g["t"] + 0.012 * k++, (int) p, (double) g["d"], gain, (bool) g["m"], rnd);
+                }
+        std::vector<GamePlayer::StemSource> sources;
+        auto add = [&] (const char* id, const juce::String& name, std::shared_ptr<juce::AudioBuffer<float>> b, bool on)
+        {
+            GamePlayer::StemSource st;
+            st.id = id; st.name = name; st.audio = std::move (b); st.sampleRate = lessonAudio::rate; st.enabled = on;
+            sources.push_back (std::move (st));
+        };
+        add ("click", "Click", clicks, (bool) arg (args, "clickOn", true));
+        if (anyDrums) add ("drums", juce::String (u8"Batería"), drums, true);
+        add ("guitar", juce::String (u8"Guitarra guía"), guide, (bool) arg (args, "guideOn", true));
+        engine.stop();
+        game.load (std::move (sources), length, engine.lock);
+        gameData = arg (args, "data", {});
+        auto data = gameData;
+        if (auto* d = data.getDynamicObject())
+        {
+            d->setProperty ("stems", game.stemsInfo());
+            d->setProperty ("musicStart", 0.0);
+            d->setProperty ("length", game.length());
         }
         return ok (data);
     }
