@@ -233,10 +233,10 @@ namespace lessonAudio
         }
     }
 
-    static void drum (juce::AudioBuffer<float>& b, double t, char kind, juce::Random& rnd)
+    static void drum (juce::AudioBuffer<float>& b, double t, char kind, juce::Random& rnd, float vel = 1.0f)
     {
         const int at = (int) (t * rate);
-        const int n = (int) ((kind == 'k' ? 0.35 : kind == 's' ? 0.22 : 0.06) * rate);
+        const int n = (int) ((kind == 'k' ? 0.35 : kind == 's' ? 0.22 : kind == 'c' ? 1.4 : kind == 'o' ? 0.3 : 0.06) * rate);
         double phase = 0, lp = 0, prev = 0;
         for (int i = 0; i < n && at + i < b.getNumSamples(); ++i)
         {
@@ -260,10 +260,11 @@ namespace lessonAudio
             {
                 const double noise = rnd.nextDouble() * 2 - 1;
                 const double hp = noise - prev; prev = noise;   // bright
-                v = (float) (hp * std::exp (-x * 70.0) * 0.16);
+                const double decay = kind == 'c' ? 3.2 : kind == 'o' ? 11.0 : 70.0;
+                v = (float) (hp * std::exp (-x * decay) * (kind == 'c' ? 0.22 : kind == 'o' ? 0.15 : 0.16));
             }
-            b.addSample (0, at + i, v * (kind == 'h' ? 0.8f : 1.0f));
-            b.addSample (1, at + i, v * (kind == 'h' ? 1.0f : 1.0f));
+            b.addSample (0, at + i, v * vel * (kind == 'h' || kind == 'o' ? 0.8f : 1.0f));
+            b.addSample (1, at + i, v * vel);
         }
     }
 
@@ -2018,6 +2019,27 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
                     for (auto& p : *ps)   // a chord is strummed: low to high, a hair apart
                         lessonAudio::pluck (*guide, (double) g["t"] + 0.012 * k++, (int) p, (double) g["d"], gain, (bool) g["m"], rnd);
                 }
+        // more stems made the same way (a band with soft / normal / loud versions of each part)
+        std::vector<std::tuple<juce::String, juce::String, std::shared_ptr<juce::AudioBuffer<float>>, bool, float>> extra;
+        if (auto* list = arg (args, "extra", {}).getArray())
+            for (auto& x : *list)
+            {
+                auto b = std::make_shared<juce::AudioBuffer<float>> (2, n);
+                b->clear();
+                if (auto* ds = x["drums"].getArray())
+                    for (auto& d : *ds) { const auto k = d["k"].toString(); lessonAudio::drum (*b, (double) d["t"], k.isEmpty() ? 'h' : (char) k[0], rnd, d.hasProperty ("v") ? (float) (double) d["v"] : 1.0f); }
+                if (auto* gs = x["guide"].getArray())
+                    for (auto& g : *gs)
+                        if (auto* ps = g["p"].getArray())
+                        {
+                            const float vel = g.hasProperty ("v") ? (float) (double) g["v"] : 1.0f;
+                            const float gain = vel * 0.5f / std::sqrt ((float) juce::jmax (1, ps->size()));
+                            int k = 0;
+                            for (auto& p : *ps)
+                                lessonAudio::pluck (*b, (double) g["t"] + 0.012 * k++, (int) p, (double) g["d"], gain, (bool) g["m"], rnd);
+                        }
+                extra.emplace_back (x["id"].toString(), x["name"].toString(), b, x.hasProperty ("on") ? (bool) x["on"] : true, x.hasProperty ("gain") ? (float) (double) x["gain"] : 1.0f);
+            }
         std::vector<GamePlayer::StemSource> sources;
         auto add = [&] (const char* id, const juce::String& name, std::shared_ptr<juce::AudioBuffer<float>> b, bool on)
         {
@@ -2027,9 +2049,12 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
         };
         add ("click", "Click", clicks, (bool) arg (args, "clickOn", true));
         if (anyDrums) add ("drums", juce::String (u8"Batería"), drums, true);
-        add ("guitar", juce::String (u8"Guitarra guía"), guide, (bool) arg (args, "guideOn", true));
+        if (arg (args, "guide", {}).size() > 0 || extra.empty())
+            add ("guitar", juce::String (u8"Guitarra guía"), guide, (bool) arg (args, "guideOn", true));
+        for (auto& [id, name, b, on, g] : extra) add (id.toRawUTF8(), name, b, on);
         engine.stop();
         game.load (std::move (sources), length, engine.lock);
+        for (auto& [id, name, b, on, g] : extra) game.setStemGain (id, g);
         gameData = arg (args, "data", {});
         auto data = gameData;
         if (auto* d = data.getDynamicObject())

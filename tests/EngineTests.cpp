@@ -2620,16 +2620,24 @@ static void testFeedpak()
             gp.render (out, 256);
             return out.getSample (0, 100);
         };
+        auto mixed = [&]
+        {
+            // volume changes glide for ~120 ms: measure once they've settled, then go back to where it was
+            const double at = gp.positionSeconds();
+            for (int i = 0; i < 40; ++i) block();
+            gp.seek (at);
+            return block();
+        };
         gp.play();
-        CHECK (std::abs (block() - 0.5f) < 1e-5f, "con todo prendido suena la mezcla original, no la suma");
+        CHECK (std::abs (mixed() - 0.5f) < 1e-5f, "con todo prendido suena la mezcla original, no la suma");
         gp.setStemEnabled ("guitar", false);
-        CHECK (std::abs (block() - 0.2f) < 1e-5f, "sin la guitarra suenan los otros stems");
+        CHECK (std::abs (mixed() - 0.2f) < 1e-5f, "sin la guitarra suenan los otros stems");
         gp.setStemEnabled ("guitar", true);
         gp.setStemGain ("drums", 0.5f);
-        CHECK (std::abs (block() - 0.2f) < 1e-5f, "con un instrumento más bajo, mezcla los stems (0.1 + 0.2·0.5)");
+        CHECK (std::abs (mixed() - 0.2f) < 1e-5f, "con un instrumento más bajo, mezcla los stems (0.1 + 0.2·0.5)");
         gp.setStemGain ("drums", 1.0f);
         gp.setMasterGain (0.5f);
-        CHECK (std::abs (block() - 0.25f) < 1e-5f, "el volumen general baja la mezcla original");
+        CHECK (std::abs (mixed() - 0.25f) < 1e-5f, "el volumen general baja la mezcla original");
         gp.setMasterGain (1.0f);
         gp.seek (1.0);
         for (int i = 0; i < 187; ++i) block();     // ~1 s
@@ -2850,6 +2858,34 @@ static void testLessonExercise()
     CHECK ((bool) t.api.call ("gameClose", {})["ok"], "y se cierra");
 }
 
+static void testJamBand()
+{
+    std::cout << "Banda de improvisación: varias versiones por parte, volumen sin saltos\n";
+    TestEngine t;
+    const auto args = juce::JSON::parse (R"({"length":4,"data":{"arrangements":{}},
+        "extra":[{"id":"gtr2","name":"Guitarra","guide":[{"t":0,"p":[52,59,64],"d":3.5,"v":1}]},
+                 {"id":"drums3","name":"Batería fuerte","drums":[{"t":0,"k":"c"},{"t":0.5,"k":"o"}],"gain":0}]})");
+    auto r = t.api.call ("gameOpenLesson", args);
+    CHECK ((bool) r["ok"], "abre la base (" << r["error"].toString() << ")");
+    CHECK (r["data"]["stems"].size() == 3, "click y las dos partes, sin guía vacía (" << r["data"]["stems"].size() << ")");
+    t.api.call ("gameStem", juce::JSON::parse (R"({"id":"click","on":false})"));
+    t.api.call ("gamePlay", {});
+    juce::AudioBuffer<float> out (2, 480);
+    for (int i = 0; i < 40; ++i) { out.clear(); t.engine.renderOffline (out, 480); }   // 0.4 s in
+    t.api.call ("gameStemVolume", juce::JSON::parse (R"({"id":"gtr2","gain":0})"));
+    out.clear(); t.engine.renderOffline (out, 480);
+    const float right = out.getMagnitude (0, 0, 48), later = out.getMagnitude (0, 432, 48);
+    CHECK (right > 0.005f, "al bajarla no se corta de golpe (" << right << ")");
+    for (int i = 0; i < 20; ++i) { out.clear(); t.engine.renderOffline (out, 480); }
+    CHECK (out.getMagnitude (0, 0, 480) < 1.0e-4f && later <= right * 1.5f, "y en un momento queda en silencio");
+    t.api.call ("gameSpeed", juce::JSON::parse (R"({"speed":1.03})"));
+    out.clear(); t.engine.renderOffline (out, 480);
+    t.api.call ("gameSpeed", juce::JSON::parse (R"({"speed":1.05})"));
+    out.clear(); t.engine.renderOffline (out, 480);
+    CHECK (std::isfinite (out.getSample (0, 100)), "cambios chicos de velocidad no rompen nada");
+    t.api.call ("gameClose", {});
+}
+
 static void testGameStress()
 {
     std::cout << "Estrés del juego: abrir canciones y tocar con el audio andando\n";
@@ -2979,6 +3015,7 @@ int main()
     testStress();
     testGameStress();
     testLessonExercise();
+    testJamBand();
     std::cout << "\n" << (checks - failures) << " de " << checks << " pruebas OK\n";
     return failures == 0 ? 0 : 1;
 }

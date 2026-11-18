@@ -96,7 +96,7 @@
   /** The tabs on top of the library and the lessons: songs | lessons. */
   Game.tabs = function (which) {
     return el('div.seg.g-tabs', { role: 'group', 'aria-label': 'Juego' },
-      el('button' + (which === 'songs' ? '.on' : ''), { 'aria-pressed': String(which === 'songs'), onclick: () => { if (which !== 'songs') Game.showLibrary(); } }, G.lang === 'en' ? 'Songs' : 'Canciones'),
+      el('button' + (which === 'songs' ? '.on' : ''), { 'aria-pressed': String(which === 'songs'), onclick: () => { if (which !== 'songs') { if (G.Lessons && G.Lessons.stopAll) G.Lessons.stopAll(); Game.showLibrary(); } } }, G.lang === 'en' ? 'Songs' : 'Canciones'),
       el('button' + (which === 'lessons' ? '.on' : ''), { 'aria-pressed': String(which === 'lessons'), onclick: () => { if (which !== 'lessons') { store.set('tab', 'lessons'); G.Lessons.show(root); } } }, G.lang === 'en' ? 'Lessons' : 'Lecciones'));
   };
   Game.leave = function () {

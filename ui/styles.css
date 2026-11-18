@@ -739,3 +739,18 @@ body.in-game #app { visibility: hidden; }
 .l-jamfb { margin: 6px 0 14px; }
 .l-jamctl { margin: 12px 0; gap: 14px; }
 .l-jamstem { display: inline-flex; align-items: center; gap: 6px; color: var(--text2); }
+/* lessons: polish 0.19 */
+.l-trainer .l-opts { counter-reset: opt; }
+.l-trainer .l-opt::before { counter-increment: opt; content: counter(opt); display: inline-block; min-width: 16px; margin-right: 8px; font-size: 11px; color: var(--muted); border: 1px solid var(--line2); border-radius: 4px; text-align: center; line-height: 15px; }
+.l-unithead .spacer { flex: 1; }
+.l-inst button { min-width: 74px; }
+.l-earsrc { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.l-insel { height: 26px; font-size: 12px; max-width: 220px; }
+.l-jamlevel { display: flex; flex-direction: column; gap: 4px; padding: 12px 18px; border-radius: 12px; background: var(--raised); border: 1px solid var(--line); min-width: 110px; }
+.l-jamlevel small { color: var(--muted); font-size: 11px; }
+.l-jamlevel b { font-size: 15px; }
+.l-jamdots { display: flex; gap: 4px; align-items: flex-end; height: 22px; }
+.l-jamdots i { display: block; width: 10px; border-radius: 2px; background: #3a3a40; transition: background .3s; }
+.l-jamdots i:nth-child(1) { height: 8px; } .l-jamdots i:nth-child(2) { height: 14px; } .l-jamdots i:nth-child(3) { height: 22px; }
+.l-jamdots i.on { background: var(--accent); }
+.l-jamtempo { color: var(--text2); font-variant-numeric: tabular-nums; }

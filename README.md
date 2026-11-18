@@ -82,7 +82,8 @@ En el modo Juego, la pestaña **Lecciones** (en español y en inglés): 37 lecci
   - **¿Qué nota es?**: un punto en el mástil y eliges su nombre.
   - **Intervalos y acordes de oído**.
   - **Bends afinados**: una aguja en vivo te muestra si te falta o te pasas.
-  - **Improvisación libre** sobre 5 bases en loop, con la escala en el mástil y tus notas iluminadas mientras tocas.
+  - **Improvisación libre** sobre 5 bases en loop, con la escala en el mástil y tus notas iluminadas mientras tocas. **La banda te sigue**: si tocás más y más fuerte sube (suave, normal, fuerte), si tocás poco baja; y en modo experimental también sigue tu tempo.
+  - **Modo bajo** (4 cuerdas) para encontrar y nombrar notas y para improvisar.
   - **Cambios de acordes** a tiempo, cada vez más rápido.
 - El progreso queda guardado y la portada te dice por dónde seguir.
 

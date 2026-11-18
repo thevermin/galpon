@@ -275,29 +275,33 @@
 
   /** The neck seen like a tab: string 1 on top, frets across. marks: [{s, f, label, root}] */
   function fretboard(cfg) {
+    const tun = cfg.tuning || OPEN, ns = tun.length;   // low string first
+    const colour = (str) => (G.stringColour ? G.stringColour(ns - str) : '#ccc');
     const from = cfg.from || 0, to = cfg.to || 12;
     const n = to - from + 1;
-    const W = Math.min(820, 60 + n * 52), H = 150, x0 = 36, y0 = 18, dy = 22;
+    const x0 = 36, y0 = 18, dy = 22, span = dy * (ns - 1);
+    const W = Math.min(820, 60 + n * 52), H = y0 + span + 42;
     const fx = (f) => x0 + (f - from + (from === 0 ? 0 : 0.5)) * ((W - x0 - 10) / (n - (from === 0 ? 0.5 : 0)));
     const fw = (W - x0 - 10) / (n - (from === 0 ? 0.5 : 0));
-    const s = svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: 'l-fret', role: 'img', 'aria-label': cfg.label || 'Diapasón' });
-    s.appendChild(svg('rect', { x: x0, y: y0 - 6, width: W - x0 - 10, height: dy * 5 + 12, rx: 4, fill: '#2a2119' }));
+    const s = svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: 'l-fret', role: 'img', 'aria-label': cfg.label || L2('Diapasón', 'Fretboard') });
+    s.appendChild(svg('rect', { x: x0, y: y0 - 6, width: W - x0 - 10, height: span + 12, rx: 4, fill: '#2a2119' }));
     for (let f = Math.max(1, from); f <= to; f++) {
       const x = fx(f) + fw / 2;
-      s.appendChild(svg('line', { x1: x, x2: x, y1: y0 - 6, y2: y0 + dy * 5 + 6, stroke: f === 0 ? '#eee' : '#9a8f80', 'stroke-width': 2 }));
+      s.appendChild(svg('line', { x1: x, x2: x, y1: y0 - 6, y2: y0 + span + 6, stroke: '#9a8f80', 'stroke-width': 2 }));
     }
-    if (from === 0) s.appendChild(svg('rect', { x: fx(0) + fw / 2 - 3, y: y0 - 6, width: 5, height: dy * 5 + 12, fill: '#e8e2d4' }));
-    for (const d of [3, 5, 7, 9, 15, 17]) if (d >= from && d <= to && d > 0) s.appendChild(svg('circle', { cx: fx(d), cy: y0 + dy * 2.5, r: 5, fill: '#5a4d3c' }));
-    if (12 >= from && 12 <= to) { s.appendChild(svg('circle', { cx: fx(12), cy: y0 + dy * 1.5, r: 5, fill: '#5a4d3c' })); s.appendChild(svg('circle', { cx: fx(12), cy: y0 + dy * 3.5, r: 5, fill: '#5a4d3c' })); }
-    for (let i = 0; i < 6; i++) {
+    if (from === 0) s.appendChild(svg('rect', { x: fx(0) + fw / 2 - 3, y: y0 - 6, width: 5, height: span + 12, fill: '#e8e2d4' }));
+    for (const d of [3, 5, 7, 9, 15, 17]) if (d >= from && d <= to && d > 0) s.appendChild(svg('circle', { cx: fx(d), cy: y0 + span / 2, r: 5, fill: '#5a4d3c' }));
+    if (12 >= from && 12 <= to) for (const k of [0.3, 0.7]) s.appendChild(svg('circle', { cx: fx(12), cy: y0 + span * k, r: 5, fill: '#5a4d3c' }));
+    for (let i = 0; i < ns; i++) {
       const str = i + 1, y = y0 + i * dy;
-      if (cfg.hl === str) s.appendChild(svg('rect', { x: x0, y: y - 9, width: W - x0 - 10, height: 18, fill: strColour(str), opacity: 0.18 }));
-      s.appendChild(svg('line', { x1: x0, x2: W - 10, y1: y, y2: y, stroke: strColour(str), 'stroke-width': (1 + i * 0.35) * (cfg.hl === str ? 1.8 : 1), opacity: cfg.hl && cfg.hl !== str ? 0.35 : 0.8 }));
+      const thick = (1 + i * (ns === 4 ? 0.7 : 0.35));
+      if (cfg.hl === str) s.appendChild(svg('rect', { x: x0, y: y - 9, width: W - x0 - 10, height: 18, fill: colour(str), opacity: 0.18 }));
+      s.appendChild(svg('line', { x1: x0, x2: W - 10, y1: y, y2: y, stroke: colour(str), 'stroke-width': thick * (cfg.hl === str ? 1.8 : 1), opacity: cfg.hl && cfg.hl !== str ? 0.35 : 0.8 }));
       s.appendChild(svg('text', { x: 12, y: y + 4, 'font-size': 11, fill: '#999' }, String(str)));
     }
     for (let f = Math.max(from, 1); f <= to; f++) s.appendChild(svg('text', { x: fx(f), y: H - 4, 'text-anchor': 'middle', 'font-size': 10, fill: '#777' }, String(f)));
-    if (cfg.onPick)   // click a fret (for when there's no guitar at hand)
-      for (let i = 0; i < 6; i++) for (let f = from; f <= to; f++) {
+    if (cfg.onPick)   // click a fret (for when there's no instrument at hand)
+      for (let i = 0; i < ns; i++) for (let f = from; f <= to; f++) {
         const r = svg('rect', { x: fx(f) - fw / 2, y: y0 + i * dy - dy / 2, width: fw, height: dy, fill: 'transparent', class: 'l-pick' });
         r.addEventListener('click', () => cfg.onPick(i + 1, f));
         s.appendChild(r);
@@ -307,10 +311,10 @@
       const g = svg('g', { class: 'l-mark', tabindex: 0, role: 'button', 'aria-label': (m.label || '') + ' · ' + m.s + ' · ' + m.f });
       if (m.ring) g.appendChild(svg('circle', { cx: x, cy: y, r: 12.5, fill: 'none', stroke: '#f2f2f3', 'stroke-width': 1.5 }));
       if (m.glow) g.appendChild(svg('circle', { cx: x, cy: y, r: 15, fill: '#4ade80', opacity: 0.35 }));
-      const fill = m.good ? '#4ade80' : m.bad ? '#f87171' : m.root ? '#ef4444' : m.dim ? '#3b3b44' : strColour(m.s);
+      const fill = m.good ? '#4ade80' : m.bad ? '#f87171' : m.root ? '#ef4444' : m.dim ? '#3b3b44' : colour(m.s);
       g.appendChild(svg('circle', { cx: x, cy: y, r: 9.5, fill, stroke: m.glow ? '#fff' : '#111', 'stroke-width': m.glow ? 2 : 1 }));
       if (m.label) g.appendChild(svg('text', { x, y: y + 3.5, 'text-anchor': 'middle', 'font-size': m.label.length > 2 ? 7.5 : 9, 'font-weight': 700, fill: m.dim ? '#ddd' : '#111' }, m.label));
-      g.addEventListener('click', () => hearNotes([midiOf(m.s, m.f)]));
+      g.addEventListener('click', () => hearNotes([tun[ns - m.s] + m.f]));
       s.appendChild(g);
     }
     return el('div.l-fretwrap', null, s);
@@ -923,6 +927,19 @@
       G.call('setTuner', { on: false });
     },
   };
+  /** Which input of the interface the instrument comes in on (changes the listening track's input). */
+  function inputSelect(g, after) {
+    const sources = (G.audio && G.audio.sources) || [];
+    if (!sources.length) return el('span', { text: L2('entrada ', 'input ') + ((g.input || 0) + 1) });
+    return el('select.g-select.l-insel', { 'aria-label': L2('Entrada', 'Input'), onchange: async (e) => {
+      const ch = parseInt(e.target.value, 10);
+      await G.call('setTrack', { trackId: g.trackId, inputChannel: ch, stereoInput: false });
+      g.input = ch;
+      await G.call('setTuner', { on: true, trackId: g.trackId });
+      if (after) after();
+    } }, sources.map((name, i) => el('option', { value: i, selected: i === g.input, text: name })));
+  }
+
   /** The «where your guitar comes in» line, with a level meter. */
   function earBar(onReady) {
     const meter = el('i.l-lvl');
@@ -930,7 +947,7 @@
     const show = () => {
       const g = Ear.guitar;
       line.replaceChildren(el('span.l-lvlwrap', { title: L2('Lo que entra de tu guitarra', 'What comes in from your guitar') }, meter),
-        g ? el('span', { text: L2('Te escucho por ', 'Listening through ') + g.name + (g.input >= 0 ? ' · ' + L2('entrada ', 'input ') + (g.input + 1) : '') })
+        g ? el('span.l-earsrc', null, L2('Te escucho por ', 'Listening through ') + g.name + ' · ', inputSelect(g, show))
           : el('span', null, L2('No tengo por dónde escucharte. ', "I can't hear you yet. "),
             el('button.btn', { onclick: async () => { await Ear.create(); show(); if (onReady) onReady(); } }, L2('Escuchar mi guitarra', 'Listen to my guitar'))));
     };
@@ -940,7 +957,7 @@
   }
 
   // ------------------------------------------------------------------ progress for the trainers
-  const tp = (kind) => { prog.tr = prog.tr || {}; return (prog.tr[kind] = prog.tr[kind] || { lv: {}, best: 0, miss: {} }); };
+  const tp = (kind) => { prog.tr = prog.tr || {}; const k = kind + (noteKind(kind) && isBass() ? ':bass' : ''); return (prog.tr[k] = prog.tr[k] || { lv: {}, best: 0, miss: {} }); };
   const starsFor = (acc) => (acc >= 0.95 ? 3 : acc >= 0.8 ? 2 : acc >= 0.6 ? 1 : 0);
   function pickWeighted(items, kind, keyOf) {
     const miss = tp(kind).miss;
@@ -957,6 +974,22 @@
 
   // ------------------------------------------------------------------ the trainers
   const NATURALS = [0, 2, 4, 5, 7, 9, 11];
+  // guitar or bass (for the note trainers and the jam): 4-string bass E1 A1 D2 G2
+  const BASS_OPEN = [28, 33, 38, 43];
+  const isBass = () => prog.inst === 'bass';
+  const tuning = () => (isBass() ? BASS_OPEN : OPEN);
+  const openOf = (str, tun = tuning()) => tun[tun.length - str];
+  const BASS_LEVELS = [
+    { name: ['Cuerda 4 (Mi)', 'String 4 (E)'], strings: [4] },
+    { name: ['Cuerda 3 (La)', 'String 3 (A)'], strings: [3] },
+    { name: ['Cuerdas 4 y 3, con sostenidos', 'Strings 4 and 3, with sharps'], strings: [4, 3], sharps: true },
+    { name: ['Cuerdas 2 y 1 (Re y Sol)', 'Strings 2 and 1 (D and G)'], strings: [2, 1] },
+    { name: ['Todo el mástil', 'The whole neck'], strings: [4, 3, 2, 1], sharps: true },
+  ];
+  const BASS_ENDLESS = { name: ['Práctica eterna', 'Endless practice'], strings: [4, 3, 2, 1], sharps: true };
+  const noteKind = (kind) => kind === 'find' || kind === 'name';
+  const levelsOf = (kind) => (noteKind(kind) && isBass() ? BASS_LEVELS : TRAINERS[kind].levels);
+  const endlessOf = (kind) => (noteKind(kind) && isBass() ? BASS_ENDLESS : TRAINERS[kind].endless);
   const NOTE_LEVELS = [
     { name: ['Cuerda 6', 'String 6'], strings: [6] },
     { name: ['Cuerda 5', 'String 5'], strings: [5] },
@@ -1000,7 +1033,7 @@
   function trainer(opts) {
     const T = TRAINERS[opts.kind];
     const endless = opts.level === 'endless';
-    const lv = endless ? T.endless : T.levels[opts.level];
+    const lv = endless ? endlessOf(opts.kind) : levelsOf(opts.kind)[opts.level];
     const count = endless ? Infinity : (opts.count || 10);
     const box = el('div.l-trainer' + (opts.inline ? '.inline' : ''));
     const stat = { n: 0, right: 0, streak: 0, best: tp(opts.kind).best || 0, startedAt: 0 };
@@ -1039,7 +1072,7 @@
       const acc = stat.n ? stat.right / stat.n : 0;
       const st = starsFor(acc);
       if (!endless) { const t = tp(opts.kind); t.lv[opts.level] = Math.max(t.lv[opts.level] || 0, st); save(); }
-      const nextLv = !endless && T.levels[opts.level + 1];
+      const nextLv = !endless && levelsOf(opts.kind)[opts.level + 1];
       stage.replaceChildren(
         el('div.l-stars', null, [0, 1, 2].map((i) => el('span' + (i < st ? '.on' : ''), { text: '★' }))),
         el('p.l-score', { text: `${stat.right} ${L2('de', 'of')} ${stat.n}. ` + (st === 3 ? L2('¡Perfecto!', 'Perfect!') : st === 2 ? L2('Muy bien.', 'Very good.') : st === 1 ? L2('Vas bien: una vuelta más.', 'Getting there: one more round.') : L2('Repasa y prueba otra vez, sin apuro.', 'Review and try again, no rush.')) }),
@@ -1055,7 +1088,16 @@
     }
     header();
     if (endless || !opts.inline) foot.append(el('button.btn', { onclick: () => (endless ? finish() : opts.onExit ? (stop(), opts.onExit()) : finish()) }, endless ? L2('Terminar', 'Finish') : L2('Salir', 'Quit')));
-    const stop = () => { finished = true; if (cleanup) cleanup(); cleanup = null; Ear.stop(); };
+    // keys: 1…9 pick an answer, R plays it again
+    const onKey = (e) => {
+      if (!box.isConnected || finished) return document.removeEventListener('keydown', onKey, true);
+      if (e.target.closest && e.target.closest('input, select, textarea')) return;
+      const k = parseInt(e.key, 10);
+      if (k >= 1 && k <= 9) { const b = [...stage.querySelectorAll('.l-opt:not(:disabled)')][k - 1]; if (b) { e.preventDefault(); e.stopPropagation(); b.click(); } }
+      else if (e.key === 'r' || e.key === 'R') { const h = stage.querySelector('.l-hear'); if (h) { e.preventDefault(); e.stopPropagation(); h.click(); } }
+    };
+    document.addEventListener('keydown', onKey, true);
+    const stop = () => { finished = true; document.removeEventListener('keydown', onKey, true); if (cleanup) cleanup(); cleanup = null; Ear.stop(); };
     box._stop = stop;
     if (T.live) {
       Ear.start((r, raw) => { bar._meter(raw); if (box._onPitch) box._onPitch(r); }).then(() => { bar._show(); next(); });
@@ -1081,13 +1123,13 @@
       do { it = pickWeighted(items, kind, (x) => x.join(':')); } while (ASK._last === it.join(':') && items.length > 1);
       ASK._last = it.join(':');
       const [str, pc] = it;
-      const open = OPEN[6 - str];
+      const open = openOf(str);
       const frets = []; for (let f = 0; f <= 12; f++) if ((open + f) % 12 === pc) frets.push(f);
       let tries = 0, judged = false, armed = true, stable = { m: null, n: 0 }, lastJudged = null;
       const marks = [];
       const say = el('p.l-trsay');
       const t0 = performance.now();
-      const draw = () => fb.replaceChildren(fretboard({ to: 12, hl: str, marks, onPick: (s, f) => { if (s === str) judge(open + f, true); } }));
+      const draw = () => fb.replaceChildren(fretboard({ to: 12, hl: str, marks, tuning: tuning(), onPick: (s, f) => { if (s === str) judge(open + f, true); } }));
       const fb = el('div');
       stage.replaceChildren(
         el('p.l-trq', null, ...rich(L2(`Toca **${noteBtnLabel(pc)}** en la cuerda **${str}**`, `Play **${noteBtnLabel(pc)}** on string **${str}**`))),
@@ -1149,21 +1191,21 @@
     name(lv, stage, done, next, endless, kind) {
       const pcs = lv.sharps ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] : NATURALS;
       const items = [];
-      for (const s of lv.strings) for (let f = 0; f <= 12; f++) if (pcs.includes((OPEN[6 - s] + f) % 12)) items.push([s, f]);
+      for (const s of lv.strings) for (let f = 0; f <= 12; f++) if (pcs.includes((openOf(s) + f) % 12)) items.push([s, f]);
       let it;
       do { it = pickWeighted(items, kind, (x) => x.join(':')); } while (ASK._lastN === it.join(':'));
       ASK._lastN = it.join(':');
-      const [str, f] = it, pc = (OPEN[6 - str] + f) % 12;
+      const [str, f] = it, pc = (openOf(str) + f) % 12;
       const say = el('p.l-trsay');
       const opts = pcs.length > 7 ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] : NATURALS;
       const btns = opts.map((o) => el('button.l-opt', { onclick: () => {
         btns.forEach((b, i) => { b.disabled = true; b.classList.toggle('right', opts[i] === pc); b.classList.toggle('wrong', opts[i] === o && o !== pc); });
         say.replaceChildren(...rich(L2(`Cuerda ${str}, traste ${f}: **${noteBtnLabel(pc)}**.`, `String ${str}, fret ${f}: **${noteBtnLabel(pc)}**.`)));
-        hearNotes([OPEN[6 - str] + f]);
+        hearNotes([openOf(str) + f]);
         done(o === pc, it.join(':'));
         setTimeout(next, o === pc ? 900 : 1800);
       } }, noteBtnLabel(o)));
-      stage.replaceChildren(el('p.l-trq', { text: L2('¿Qué nota es?', 'Which note is it?') }), fretboard({ to: 12, marks: [{ s: str, f, label: '?' }] }), el('div.l-opts' + (opts.length > 7 ? '.wide' : ''), null, btns), say);
+      stage.replaceChildren(el('p.l-trq', { text: L2('¿Qué nota es?', 'Which note is it?') }), fretboard({ to: 12, tuning: tuning(), marks: [{ s: str, f, label: '?' }] }), el('div.l-opts' + (opts.length > 7 ? '.wide' : ''), null, btns), say);
     },
 
     ear(lv, stage, done, next, endless, kind) {
@@ -1273,69 +1315,146 @@
     Ear.stop();
     G.call('gameClose');
   }
+  /** The backing band in three versions (soft, normal, loud) of drums, guitar and bass; the jam
+      crossfades between them following how you play. */
   function jamAudio(J) {
     const spb = 60 / J.bpm, bpb = 4, cycles = Math.max(2, Math.ceil(40 / (J.prog.length * bpb * spb)));
-    const clicks = [], drums = [], guide = [];
     const bars = J.prog.length * cycles;
+    const parts = {};
+    const P = (id) => (parts[id] = parts[id] || { id, drums: [], guide: [] });
+    const rock = J.drums === 'rock';
     for (let b = 0; b < bars; b++) {
       const name = J.prog[b % J.prog.length], root = J.roots[b % J.prog.length];
-      const ps = chordPitches(name);
+      const ps = chordPitches(name), top = ps.slice(-4);
       const t = b * bpb * spb;
-      // rhythm guitar: down on 1, down-up on 2 and 3, down on 4 (soft), bass on 1 and 3
-      for (const [o, d] of [[0, 1], [1, 0.5], [1.5, 0.5], [2, 0.5], [2.5, 0.5], [3, 1]]) guide.push({ t: t + o * spb, p: o % 1 ? ps.slice(-4) : ps, d: d * spb * 0.9 });
       const bass = 28 + ((root - 4 + 12) % 12);
-      guide.push({ t, p: [bass], d: 2 * spb * 0.9 }, { t: t + 2 * spb, p: [bass + (J.drums === 'rock' ? 0 : 7)], d: 2 * spb * 0.9 });
+      // guitar: 1 = a chord that rings, 2 = the strum, 3 = driving eighths
+      P('gtr1').guide.push({ t, p: ps, d: bpb * spb * 0.95, v: 0.75 });
+      for (const [o, d] of [[0, 1], [1, 0.5], [1.5, 0.5], [2, 0.5], [2.5, 0.5], [3, 1]]) P('gtr2').guide.push({ t: t + o * spb, p: o % 1 ? top : ps, d: d * spb * 0.9 });
+      for (let k = 0; k < 8; k++) P('gtr3').guide.push({ t: t + k * spb / 2, p: k % 2 ? top : ps, d: spb * 0.45, v: k % 2 ? 0.8 : 1.1 });
+      // bass: 1 = one note per bar, 2 = root on 1 and 3 (fifth in the soft styles), 3 = eighths
+      P('bass1').guide.push({ t, p: [bass], d: bpb * spb * 0.9, v: 0.9 });
+      P('bass2').guide.push({ t, p: [bass], d: 2 * spb * 0.9 }, { t: t + 2 * spb, p: [bass + (rock ? 0 : 7)], d: 2 * spb * 0.9 });
+      for (let k = 0; k < 8; k++) P('bass3').guide.push({ t: t + k * spb / 2, p: [bass + (k === 6 ? 12 : 0)], d: spb * 0.42, v: k % 2 ? 0.85 : 1.05 });
+      // drums: 1 = kick and soft hats, 2 = the groove, 3 = bigger (crash every 2 bars, more kick, open hat)
       for (let k = 0; k < bpb; k++) {
         const tt = t + k * spb;
-        clicks.push({ t: tt, a: k === 0 });
-        if (J.drums === 'rock') { if (k % 2 === 0) drums.push({ t: tt, k: 'k' }); else drums.push({ t: tt, k: 's' }); drums.push({ t: tt, k: 'h' }, { t: tt + spb / 2, k: 'h' }); }
-        else { if (k === 0) drums.push({ t: tt, k: 'k' }); if (k === 2) drums.push({ t: tt, k: 's' }); drums.push({ t: tt, k: 'h' }); }
+        if (k === 0) P('drums1').drums.push({ t: tt, k: 'k', v: 0.8 });
+        P('drums1').drums.push({ t: tt, k: 'h', v: 0.6 });
+        if (rock) { P('drums2').drums.push({ t: tt, k: k % 2 ? 's' : 'k' }); P('drums2').drums.push({ t: tt, k: 'h' }, { t: tt + spb / 2, k: 'h' }); }
+        else { if (k === 0) P('drums2').drums.push({ t: tt, k: 'k' }); if (k === 2) P('drums2').drums.push({ t: tt, k: 's' }); P('drums2').drums.push({ t: tt, k: 'h' }); }
+        P('drums3').drums.push({ t: tt, k: k % 2 ? 's' : 'k', v: 1.1 });
+        if (k === 2) P('drums3').drums.push({ t: tt + spb / 2, k: 'k' });
+        P('drums3').drums.push({ t: tt, k: k === 0 && b % 2 === 0 ? 'c' : 'h' }, { t: tt + spb / 2, k: k === 3 ? 'o' : 'h' });
       }
     }
     const length = bars * bpb * spb;
-    return { length: length + 1, clicks, drums, guide, clickOn: false, loopEnd: length, spb };
+    const names = { gtr: L2('Guitarra', 'Guitar'), bass: L2('Bajo', 'Bass'), drums: L2('Batería', 'Drums') };
+    const extra = Object.values(parts).map((x) => Object.assign(x, { name: names[x.id.replace(/\d/, '')] + ' ' + x.id.slice(-1), gain: x.id.endsWith('2') ? 1 : 0 }));
+    return { length: length + 1, extra, loopEnd: length, spb, bpb };
+  }
+
+  /** Follows the tempo you play at: where your notes fall against the band's eighths, and how that
+      drifts. Returns a new speed now and then (small steps), or null. Pure: tested on its own. */
+  function TempoFollower(spb) {
+    let pts = [], lastChange = 0;
+    return {
+      reset() { pts = []; },
+      onset(pos, now) {
+        const e = pos / (spb / 2);
+        pts.push({ pos, now, err: e - Math.round(e) });
+        pts = pts.filter((p) => now - p.now < 9);
+      },
+      suggest(speed, now) {
+        if (now - lastChange < 2.5) return null;
+        const use = pts.filter((p) => Math.abs(p.err) < 0.4);
+        if (use.length < 8 || use[use.length - 1].pos - use[0].pos < 3) return null;
+        // unwrap: a steady drift can cross half an eighth
+        let prev = use[0].err;
+        const xs = [], ys = [];
+        for (const p of use) { let e = p.err; while (e - prev > 0.5) e -= 1; while (prev - e > 0.5) e += 1; prev = e; xs.push(p.pos); ys.push(e); }
+        const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+        let sxy = 0, sxx = 0, syy = 0;
+        for (let i = 0; i < xs.length; i++) { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) ** 2; syy += (ys[i] - my) ** 2; }
+        if (sxx <= 0) return null;
+        const slope = sxy / sxx;
+        const fit = syy > 0 ? (sxy * sxy) / (sxx * syy) : 0;
+        const ratio = -slope * spb / 2;          // +0.05 = you're 5 % faster than the band
+        // only when your notes sit on a steady pulse (playing freely, rubato, shouldn't drag the band)
+        let res = 0;
+        for (let i = 0; i < xs.length; i++) res += (ys[i] - (my + slope * (xs[i] - mx))) ** 2;
+        const rms = Math.sqrt(res / xs.length);
+        if (Math.abs(ratio) < 0.012 || fit < 0.6 || rms > 0.13) return null;
+        const step = Math.max(-0.04, Math.min(0.04, ratio));
+        lastChange = now;
+        pts = [];
+        return Math.max(0.75, Math.min(1.25, speed * (1 + step)));
+      },
+    };
   }
 
   async function openJam(J, back) {
     stopTrainers();
+    const bass = isBass();
+    const tun = tuning(), ns = tun.length;
     const a = jamAudio(J);
-    root.replaceChildren(el('div.g-loading', null, el('b', { text: L2(J.title[0], J.title[1]) }), el('span', { text: L2('Armando la base…', 'Building the backing track…') })));
-    const r = await G.call('gameOpenLesson', { data: { arrangements: {} }, length: a.length, clicks: a.clicks, drums: a.drums, guide: a.guide, clickOn: false });
+    root.replaceChildren(el('div.g-loading', null, el('b', { text: L2(J.title[0], J.title[1]) }), el('span', { text: L2('Armando la banda…', 'Getting the band together…') })));
+    const r = await G.call('gameOpenLesson', { data: { arrangements: {} }, length: a.length, extra: a.extra, clickOn: false });
     if (!r || !r.ok) { G.toast((r && r.error) || L2('No se pudo armar la base', "Couldn't build the backing track"), true); return back(); }
     await G.call('gameLoop', { on: true, a: 0, b: a.loopEnd });
-    const st = { J, a, playing: false, inScale: 0, total: 0, lit: new Map(), speed: 1, off: null };
+    const st = { J, a, playing: false, inScale: 0, total: 0, lit: new Map(), speed: 1, level: 2, want: 2, wantSince: 0, onsets: [], levels: [], tickPos: 0, tickAt: 0,
+      followLevel: true, followTempo: false, parts: { gtr: true, bass: !bass, drums: true } };
     jamState = st;
+    const follower = TempoFollower(a.spb);
+    // the band's mix: one version of each part at a time (they crossfade)
+    function applyMix() {
+      for (const part of ['gtr', 'bass', 'drums'])
+        for (const v of [1, 2, 3]) G.call('gameStemVolume', { id: part + v, gain: st.parts[part] && v === st.level ? 1 : 0 });
+      levelView();
+    }
     const chordNow = el('div.l-jamnow'), chordNext = el('div.l-jamnext');
     const fbHost = el('div.l-jamfb');
     const score = el('div.l-jamscore');
+    const levelBox = el('div.l-jamlevel');
+    const tempoBox = el('span.l-jamtempo');
+    function levelView() {
+      levelBox.replaceChildren(el('small', { text: L2('La banda', 'The band') }),
+        el('div.l-jamdots', null, [1, 2, 3].map((i) => el('i' + (i <= st.level ? '.on' : '')))),
+        el('b', { text: [L2('Suave', 'Soft'), L2('Normal', 'Normal'), L2('Fuerte', 'Loud')][st.level - 1] }));
+    }
+    function tempoView() { tempoBox.textContent = `${Math.round(J.bpm * st.speed)} BPM` + (st.followTempo ? L2(' · te sigo', ' · following you') : ''); }
+    const setSpeed = (v) => {
+      st.speed = v;
+      // exactly 1 switches the stretcher off; when following, stay a hair away to keep it smooth
+      G.call('gameSpeed', { speed: st.followTempo && Math.abs(v - 1) < 0.002 ? 1.002 : v });
+      tempoView();
+    };
     const playBtn = el('button.btn.primary', { onclick: () => { G.call(st.playing ? 'gamePause' : 'gamePlay'); st.playing = !st.playing; playBtn.textContent = st.playing ? L2('Pausa', 'Pause') : L2('Tocar la base', 'Play the backing'); } }, L2('Tocar la base', 'Play the backing'));
-    const speed = el('select.g-select', { 'aria-label': L2('Velocidad', 'Speed'), onchange: (e) => G.call('gameSpeed', { speed: +e.target.value }) },
+    const speed = el('select.g-select', { 'aria-label': L2('Velocidad', 'Speed'), onchange: (e) => { follower.reset(); setSpeed(+e.target.value); } },
       [1.2, 1.1, 1, 0.9, 0.8, 0.7].map((v) => el('option', { value: v, selected: v === 1, text: Math.round(v * 100) + ' %' })));
     const showAll = el('input', { type: 'checkbox', checked: true, onchange: () => drawFb() });
+    const toggle = (label, on, fn) => el('label.l-jamstem', null, el('input', { type: 'checkbox', checked: on, onchange: (e) => fn(e.target.checked) }), label);
     const bar = earBar(() => {});
-    const stems = (r.data.stems || []).filter((x) => x.id !== 'click');
-    const stemToggles = stems.map((x) => el('label.l-jamstem', null, el('input', { type: 'checkbox', checked: x.enabled, onchange: (e) => G.call('gameStem', { id: x.id, on: e.target.checked }) }), x.id === 'guitar' ? L2('Guitarra y bajo', 'Guitar and bass') : x.id === 'drums' ? L2('Batería', 'Drums') : x.name));
     function chordAt(pos) { const i = Math.floor(pos / (4 * a.spb)) % J.prog.length; return [i, (i + 1) % J.prog.length]; }
     let shownChord = -1;
     function drawFb() {
-      const [ci] = chordAt(G.tick && G.tick.game ? G.tick.game.pos : 0);
+      const [ci] = chordAt(st.tickPos);
       const chordPcs = new Set(chordPitches(J.prog[ci]).map((p) => p % 12));
       const marks = [];
-      for (let s = 1; s <= 6; s++) for (let f = 0; f <= 15; f++) {
-        const pc = (OPEN[6 - s] + f) % 12;
+      for (let s = 1; s <= ns; s++) for (let f = 0; f <= 15; f++) {
+        const pc = (tun[ns - s] + f) % 12;
         if (!J.scale.includes(pc)) continue;
         if (!showAll.checked && !(f >= 4 && f <= 8)) continue;
-        const key = s + ':' + f;
-        const lit = st.lit.get(key);
+        const lit = st.lit.get(s + ':' + f);
         marks.push({ s, f, label: pc === J.blue ? 'Eb' : EN[pc], root: pc === J.root, dim: pc === J.blue, ring: chordPcs.has(pc), glow: lit && performance.now() - lit < 600 });
       }
       for (const [key, at] of st.lit) {
         if (performance.now() - at > 600) continue;
         const [s, f] = key.split(':').map(Number);
-        const pc = (OPEN[6 - s] + f) % 12;
+        const pc = (tun[ns - s] + f) % 12;
         if (!J.scale.includes(pc)) marks.push({ s, f, label: EN[pc], bad: true });
       }
-      fbHost.replaceChildren(fretboard({ to: 15, marks }));
+      fbHost.replaceChildren(fretboard({ to: 15, marks, tuning: tun }));
     }
     function updateChord(pos) {
       const [ci, ni] = chordAt(pos);
@@ -1345,45 +1464,83 @@
       chordNext.replaceChildren(el('small', { text: L2('Después', 'Next') }), el('b', { text: chordLabel(J.prog[ni]) }));
       drawFb();
     }
-    const onTick = (t) => { if (jamState === st && t.game) { updateChord(t.game.pos); if (t.game.playing !== st.playing) { st.playing = t.game.playing; playBtn.textContent = st.playing ? L2('Pausa', 'Pause') : L2('Tocar la base', 'Play the backing'); } } };
-    st.onTick = onTick;
+    // how hard you're playing → the band's level, changing on a beat after it's been clear for a moment
+    function intensity(now) {
+      st.onsets = st.onsets.filter((t) => now - t < 4);
+      st.levels = st.levels.filter((x) => now - x.t < 4);
+      const nps = st.onsets.length / 4;
+      const lastNote = st.onsets.length ? now - st.onsets[st.onsets.length - 1] : Infinity;
+      let want = lastNote > 4 ? 2 : nps < 1.0 ? 1 : nps > 3.0 ? 3 : 2;
+      if (st.levels.length > 10 && want < 3) {
+        const loud = st.levels.filter((x) => now - x.t < 1.5).map((x) => x.db), all = st.levels.map((x) => x.db).sort((p, q) => p - q);
+        const median = all[Math.floor(all.length / 2)];
+        if (loud.length && Math.max(...loud) > median + 9) want++;
+      }
+      if (want !== st.want) { st.want = want; st.wantSince = now; }
+      return want !== st.level && now - st.wantSince > 1.5;
+    }
+    let lastBeat = -1;
+    st.onTick = (t) => {
+      if (jamState !== st || !t.game) return;
+      st.tickPos = t.game.pos; st.tickAt = performance.now() / 1000;
+      updateChord(t.game.pos);
+      if (t.game.playing !== st.playing) { st.playing = t.game.playing; playBtn.textContent = st.playing ? L2('Pausa', 'Pause') : L2('Tocar la base', 'Play the backing'); }
+      const beat = Math.floor(t.game.pos / a.spb);
+      if (beat !== lastBeat) {
+        lastBeat = beat;
+        const now = performance.now() / 1000;
+        if (st.followLevel && st.playing && intensity(now)) { st.level = st.want; applyMix(); }
+        if (st.followTempo && st.playing) { const v = follower.suggest(st.speed, now); if (v) setSpeed(v); }
+      }
+    };
     let stable = { m: null, n: 0 }, lastCounted = null, redraw = 0;
     await Ear.start((rr, raw) => {
       bar._meter(raw);
       if (jamState !== st) return;
+      const now = performance.now() / 1000;
+      if (raw && raw.level > 0) st.levels.push({ t: now, db: 20 * Math.log10(raw.level) });
       if (!rr) { stable = { m: null, n: 0 }; lastCounted = null; return; }
       const m = Math.round(rr.midi);
       if (stable.m === m) stable.n++; else stable = { m, n: 1 };
       if (stable.n < 2) return;
-      // light up where that exact note is on the neck
-      for (let s = 1; s <= 6; s++) { const f = m - OPEN[6 - s]; if (f >= 0 && f <= 15) st.lit.set(s + ':' + f, performance.now()); }
+      for (let s = 1; s <= ns; s++) { const f = m - tun[ns - s]; if (f >= 0 && f <= 15) st.lit.set(s + ':' + f, performance.now()); }
       if (lastCounted !== m) {
         lastCounted = m; st.total++;
+        st.onsets.push(now);
+        // where the band was when you played it (the tick is a few ms old: move it on)
+        if (st.playing) follower.onset(st.tickPos + (now - st.tickAt) * st.speed - 0.07 * st.speed, now);
         if (J.scale.includes(((m % 12) + 12) % 12)) st.inScale++;
         score.replaceChildren(el('small', { text: L2('Notas en la escala', 'Notes in the scale') }), el('b', { text: Math.round(100 * st.inScale / st.total) + ' %' }), el('small', { text: `${st.total} ${L2('notas', 'notes')}` }));
       }
-      const now = performance.now();
-      if (now - redraw > 90) { redraw = now; drawFb(); }
+      if (performance.now() - redraw > 90) { redraw = performance.now(); drawFb(); }
     });
     bar._show();
     score.replaceChildren(el('small', { text: L2('Notas en la escala', 'Notes in the scale') }), el('b', { text: '—' }));
     const head = el('header.g-head.l-lhead', null,
       el('button.g-mode', { onclick: () => { stopJam(); back(); } }, G.icon('back', 16), L2('Volver', 'Back')),
-      el('div.l-ltitle', null, el('small', { text: L2('Improvisación libre', 'Free improvisation') }), el('b', { text: L2(J.title[0], J.title[1]) })),
+      el('div.l-ltitle', null, el('small', { text: L2('Improvisación libre', 'Free improvisation') + (bass ? L2(' · bajo', ' · bass') : '') }), el('b', { text: L2(J.title[0], J.title[1]) })),
       el('div.spacer'),
       el('button.btn', { onclick: () => G.App.showTuner() }, G.icon('tuner', 15), L2('Afinar', 'Tune')));
     const body = el('div.l-jam', { 'data-notr': '' },
-      el('div.l-jamtop', null, chordNow, chordNext, score),
+      el('div.l-jamtop', null, chordNow, chordNext, levelBox, score),
       el('p', null, ...rich(L2(`Escala: **${J.scaleName[0]}**. En rojo la tónica; con anillo, las notas del acorde que suena (las más seguras para terminar una frase).`, `Scale: **${J.scaleName[1]}**. The root in red; ringed, the notes of the chord that's playing (the safest to end a phrase on).`))),
       fbHost,
-      el('div.l-tip', null, el('b', { text: L2('Truco', 'Tip') }), el('p', { text: L2(J.tip[0], J.tip[1]) })),
+      el('div.l-tip', null, el('b', { text: L2('Truco', 'Tip') }), el('p', { text: bass ? L2('En el bajo: empieza por la tónica de cada acorde en el pulso 1, y después prueba pasar por la quinta y la octava.', 'On bass: start with each chord\'s root on beat 1, then try passing through the fifth and the octave.') : L2(J.tip[0], J.tip[1]) })),
       bar,
-      el('div.row.l-jamctl', null, playBtn, el('label.g-lab', null, L2('Velocidad', 'Speed'), speed),
-        el('label.l-jamstem', null, showAll, L2('Todo el mástil', 'Whole neck')), ...stemToggles),
-      el('p.note', { text: L2('No hay notas obligatorias: toca lo que quieras. Cuando suenas fuera de la escala, el punto se pinta de rojo.', "There are no set notes: play whatever you like. When you play outside the scale, the dot turns red.") }));
+      el('div.row.l-jamctl', null, playBtn, el('label.g-lab', null, L2('Velocidad', 'Speed'), speed), tempoBox),
+      el('div.row.l-jamctl', null,
+        toggle(L2('La banda sigue tu intensidad', 'The band follows your intensity'), true, (on) => { st.followLevel = on; if (!on) { st.level = 2; applyMix(); } }),
+        toggle(L2('Seguir mi tempo (experimental)', 'Follow my tempo (experimental)'), false, (on) => { st.followTempo = on; follower.reset(); if (!on) { setSpeed(+speed.value); } else setSpeed(st.speed); }),
+        toggle(L2('Todo el mástil', 'Whole neck'), true, (on) => { showAll.checked = on; drawFb(); })),
+      el('div.row.l-jamctl', null,
+        toggle(L2('Guitarra', 'Guitar'), st.parts.gtr, (on) => { st.parts.gtr = on; applyMix(); }),
+        toggle(L2('Bajo', 'Bass'), st.parts.bass, (on) => { st.parts.bass = on; applyMix(); }),
+        toggle(L2('Batería', 'Drums'), st.parts.drums, (on) => { st.parts.drums = on; applyMix(); })),
+      el('p.note', { text: L2('No hay notas obligatorias: toca lo que quieras. Si tocas más y más fuerte, la banda sube; si tocas poco, baja. Cuando te sales de la escala, el punto se pinta de rojo.', "There are no set notes: play whatever you like. Play more and harder and the band builds up; play less and it backs off. When you play outside the scale, the dot turns red.") }));
     root.replaceChildren(el('div.l-lesson', { 'data-notr': '' }, head, el('div.l-scroll', null, body)));
+    applyMix();
+    tempoView();
     updateChord(0);
-    // keep the glow fading even when you stop
     const fade = setInterval(() => { if (jamState !== st) return clearInterval(fade); if ([...st.lit.values()].some((t) => performance.now() - t < 900)) drawFb(); }, 200);
   }
 
@@ -1403,6 +1560,7 @@
   Lessons.trainers = TRAINERS;
   Lessons.jams = JAMS;
   Lessons.stopAll = () => stopTrainers();
+  Lessons.TempoFollower = TempoFollower;
 
   Lessons.show = function (r, lessonId) {
     root = r || root;
@@ -1433,15 +1591,18 @@
       next ? el('button.btn.primary.l-go', { onclick: () => openLesson(next, lp(next.id).page || 0) }, done ? L2('Seguir: ', 'Continue: ') + txt(next.title) : L2('Empezar', 'Start')) : el('p.l-alldone', { text: L2('¡Curso completo! 🎸', 'Course complete! 🎸') }));
     // practice: trainers that never run out, with levels
     const practice = el('section.l-unit', null,
-      el('div.l-unithead', null, el('span.l-unum', { text: '∞' }), el('div', null, el('h3', { text: L2('Práctica', 'Practice') }), el('p', { text: L2('Entrenadores con niveles y práctica eterna, improvisación libre y cambios de acordes.', 'Trainers with levels and endless practice, free improvisation and chord changes.') }))),
+      el('div.l-unithead', null, el('span.l-unum', { text: '∞' }), el('div', null, el('h3', { text: L2('Práctica', 'Practice') }), el('p', { text: L2('Entrenadores con niveles y práctica eterna, improvisación libre y cambios de acordes.', 'Trainers with levels and endless practice, free improvisation and chord changes.') })),
+        el('div.spacer'),
+        el('div.seg.l-inst', { role: 'group', 'aria-label': L2('Instrumento', 'Instrument') }, [['guitar', L2('Guitarra', 'Guitar')], ['bass', L2('Bajo', 'Bass')]].map(([k, label]) =>
+          el('button' + ((prog.inst || 'guitar') === k ? '.on' : ''), { 'aria-pressed': String((prog.inst || 'guitar') === k), onclick: () => { prog.inst = k; save(); renderCourse(); } }, label)))),
       el('div.l-cards', null,
-        ...Object.entries(TRAINERS).map(([k, T]) => {
+        ...Object.entries(TRAINERS).filter(([k]) => !(k === 'bend' && isBass())).map(([k, T]) => {
           const t = tp(k);
-          const total = T.levels.reduce((a, _, i) => a + (t.lv[i] || 0), 0);
+          const total = levelsOf(k).reduce((a, _, i) => a + (t.lv[i] || 0), 0);
           return el('button.l-card.l-trcard', { onclick: () => renderTrainerHome(k) },
             el('b', { text: T.icon + ' ' + L2(T.title[0], T.title[1]) }),
             el('small', { text: L2(T.desc[0], T.desc[1]) }),
-            el('span.l-trprog', { text: `★ ${total}/${T.levels.length * 3}` + (t.best ? ' · ' + L2('récord ', 'record ') + t.best : '') + (T.live ? ' · 🎸' : '') }));
+            el('span.l-trprog', { text: `★ ${total}/${levelsOf(k).length * 3}` + (t.best ? ' · ' + L2('récord ', 'record ') + t.best : '') + (T.live ? ' · 🎸' : '') }));
         }),
         el('button.l-card.l-trcard', { onclick: renderJamHome }, el('b', { text: '🎶 ' + L2('Improvisar', 'Improvise') }), el('small', { text: L2('Bases para tocar lo que quieras, con la escala en el mástil y tus notas en vivo.', 'Backing tracks to play whatever you want, with the scale on the neck and your notes live.') }), el('span.l-trprog', { text: JAMS.length + L2(' bases · 🎸', ' backing tracks · 🎸') })),
         el('button.l-card.l-trcard', { onclick: renderChangesHome }, el('b', { text: '🔁 ' + L2('Cambios de acordes', 'Chord changes') }), el('small', { text: L2('Elige dos acordes y cámbialos a tiempo en la autopista, cada vez más rápido.', 'Pick two chords and switch between them in time on the highway, faster and faster.') }), el('span.l-trprog', { text: CHANGE_PAIRS.length + L2(' pares', ' pairs') }))));
@@ -1470,13 +1631,13 @@
   function renderTrainerHome(kind) {
     stopTrainers();
     const T = TRAINERS[kind], t = tp(kind);
-    const lvls = T.levels.map((lv, i) => el('button.l-card', { onclick: () => runTrainer(kind, i) },
+    const lvls = levelsOf(kind).map((lv, i) => el('button.l-card', { onclick: () => runTrainer(kind, i) },
       el('b', { text: L2('Nivel ', 'Level ') + (i + 1) }), el('small', { text: lvName(lv) }),
       el('span.l-mini', null, [0, 1, 2].map((k) => el('i' + (k < (t.lv[i] || 0) ? '.on' : ''), { text: '★' })))));
     lvls.push(el('button.l-card.l-endless', { onclick: () => runTrainer(kind, 'endless') }, el('b', { text: '∞ ' + L2('Práctica eterna', 'Endless practice') }),
       el('small', { text: L2('Sin final. Lo que más te cuesta aparece más seguido.', 'No end. What you miss most comes up more often.') }), el('span.l-trprog', { text: L2('Récord: ', 'Record: ') + (t.best || 0) })));
-    subScreen(L2(T.title[0], T.title[1]), L2('Práctica', 'Practice'), [
-      el('h2', { text: T.icon + ' ' + L2(T.title[0], T.title[1]) }), el('p', { text: L2(T.desc[0], T.desc[1]) }),
+    subScreen(L2(T.title[0], T.title[1]), L2('Práctica', 'Practice') + (noteKind(kind) && isBass() ? L2(' · bajo', ' · bass') : ''), [
+      el('h2', { text: T.icon + ' ' + L2(T.title[0], T.title[1]) + (noteKind(kind) && isBass() ? L2(' (bajo)', ' (bass)') : '') }), el('p', { text: L2(T.desc[0], T.desc[1]) }),
       T.live ? el('p.note', { text: L2('Necesita tu guitarra conectada. Si no la tienes a mano, en «Encuentra la nota» también puedes tocar el traste en el dibujo.', 'Needs your guitar plugged in. Without it, in «Find the note» you can also click the fret in the drawing.') }) : null,
       el('p.note', { text: L2('Cada ronda son 10 preguntas: 3 estrellas con 95 % de aciertos.', 'Each round is 10 questions: 3 stars at 95% right.') }),
       el('div.l-cards', null, lvls)]);

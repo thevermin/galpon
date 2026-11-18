@@ -70,6 +70,7 @@ private:
         std::atomic<bool> enabled { true };
         std::atomic<float> gain { 1.0f };
         bool isFull = false;
+        float current = -1.0f;   // audio thread: the gain actually applied (glides to the target, no clicks)
     };
     void resampleAll (std::vector<std::unique_ptr<Stem>>& list);
     void mixInto (float* l, float* r, juce::int64 from, int n);   // with loop wrapping, advances nothing

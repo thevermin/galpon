@@ -129,7 +129,11 @@ void GamePlayer::seek (double seconds)
 void GamePlayer::setSpeed (float s)
 {
     s = juce::jlimit (0.25f, 1.5f, s);
-    if (std::abs (s - speed.load()) > 1.0e-4f) resetStretch = true;
+    // small nudges (a band following you) keep the stretcher running; switching it on or off, or a big
+    // jump, starts it clean
+    const float old = speed.load();
+    const bool wasOff = std::abs (old - 1.0f) < 1.0e-3f, isOff = std::abs (s - 1.0f) < 1.0e-3f;
+    if (wasOff != isOff || std::abs (s - old) > 0.1f) resetStretch = true;
     speed = s;
 }
 
@@ -205,12 +209,16 @@ void GamePlayer::mixInto (float* l, float* r, juce::int64 from, int n)
 
     const auto A = loopA.load(), B = loopB.load();
     const bool looping = loopOn.load() && B > A;
+    // a gain change glides over ~120 ms instead of jumping (a band that gets louder or softer, a stem switched off)
+    const float maxStep = (float) (1.0 / (0.12 * juce::jmax (8000.0, sampleRate)));
     for (auto& s : stems)
     {
         const bool isClick = s->id == "click";
-        if (s->isFull ? ! useFull : (! s->enabled.load() || (useFull && ! isClick))) continue;
-        const float g = master * (s->isFull ? (anyInstrument ? common : s->gain.load()) : s->gain.load());
-        if (g <= 0.0f) continue;
+        const bool on = s->isFull ? useFull : (s->enabled.load() && ! (useFull && ! isClick));
+        const float target = on ? master * (s->isFull ? (anyInstrument ? common : s->gain.load()) : s->gain.load()) : 0.0f;
+        if (s->current < 0.0f) s->current = target;   // first block: start where it should be
+        float g = s->current;
+        if (target <= 0.0f && g <= 0.0f) continue;
         const auto& a = s->audio;
         const int chs = a.getNumChannels();
         const int len = a.getNumSamples();
@@ -218,12 +226,14 @@ void GamePlayer::mixInto (float* l, float* r, juce::int64 from, int n)
         auto* R = a.getReadPointer (chs > 1 ? 1 : 0);
         for (int i = 0; i < n; ++i)
         {
+            if (g != target) g = g < target ? juce::jmin (target, g + maxStep) : juce::jmax (target, g - maxStep);
             auto idx = from + i;
             if (looping && idx >= B) idx = A + (idx - B) % (B - A);
             if (idx < 0 || idx >= len) continue;
             l[i] += L[idx] * g;
             r[i] += R[idx] * g;
         }
+        s->current = g;
     }
 }
 
