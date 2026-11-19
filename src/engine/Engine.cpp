@@ -1126,6 +1126,17 @@ void Engine::renderSegment (int offset, int len, const float* const* in, int num
         }
         game.render (masterView, len);
     }     // game mode: the song's stems, next to your live guitar
+    if (preview != nullptr)
+    {
+        // a lesson's example sound, mixed in as it is
+        const auto& p = *preview;
+        const juce::int64 left = (juce::int64) p.getNumSamples() - previewPos;
+        const int avail = (int) (left < (juce::int64) len ? left : (juce::int64) len);
+        for (int ch = 0; ch < masterView.getNumChannels() && avail > 0; ++ch)
+            masterView.addFrom (ch, 0, p, juce::jmin (ch, p.getNumChannels() - 1), (int) previewPos, avail);
+        previewPos += len;
+        if (previewPos >= p.getNumSamples()) { preview.reset(); previewBusy = false; }
+    }
     for (auto& s : song.masterInserts)
         if (s.processor != nullptr && ! s.bypass)
             processSlot (*s.processor, masterView, emptyMidi);
@@ -2651,6 +2662,14 @@ void Engine::endOffline (juce::int64 savedPos)
         for (auto& s : song.masterInserts) if (s.processor) s.processor->setNonRealtime (false);
     }
     offlineBusy = false;
+}
+
+void Engine::playPreview (std::shared_ptr<const juce::AudioBuffer<float>> sound)
+{
+    const juce::ScopedLock sl (lock);
+    preview = std::move (sound);
+    previewPos = 0;
+    previewBusy = preview != nullptr;
 }
 
 juce::Result Engine::freezeTrack (int trackId, bool on)

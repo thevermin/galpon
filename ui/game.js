@@ -290,7 +290,7 @@
     const items = [];
     for (const n of a.notes || []) items.push(Object.assign({ chord: -1 }, n));
     (a.chords || []).forEach((c, ci) => {
-      for (const n of c.notes || []) items.push(Object.assign({}, n, { t: c.t, chord: ci }));
+      for (const n of c.notes || []) items.push(Object.assign({}, n, { t: c.t, chord: ci }, c.rp ? { rp: 1 } : null));
     });
     items.sort((x, y) => x.t - y.t || x.s - y.s);
     play.items = items;
@@ -1420,6 +1420,7 @@
         ctx.font = '700 14px "Space Grotesk", Inter, sans-serif'; ctx.fillStyle = '#f3c77e';
         ctx.fillText(name, x, bandBottom + 13);
       }
+      if (c.sd) strumArrow(ctx, x, top + n * laneH / 2, Math.min(box * 0.9, n * laneH * 0.45), c.sd, c.rp);
       ctx.globalAlpha = 1;
     }
 
@@ -1470,6 +1471,7 @@
     }
     for (const i of visible) {
       const nt = p.items[i];
+      if (nt.rp && !p.marks.get(i)) continue;   // a repeated chord: just its frame (you keep the shape)
       const s = nt.s | 0, c = colour(s), sus = nt.sus || 0;
       let x = xOf(nt.t);
       const y = rowY(s);
@@ -1765,6 +1767,7 @@
       ctx.globalAlpha = fade;
       poly([P(xs - 0.55, 0, z), P(xe + 0.55, 0, z), P(xe + 0.55, top, z), P(xs - 0.55, top, z)], 'rgba(60,170,230,0.08)', 'rgba(110,230,255,0.85)', 2.5);
       const name = p.chordName(c.id), prev = p.chords[ci - 1];
+      if (c.sd) { const q = P((xs + xe) / 2, top * 0.5, z); strumArrow(ctx, q[0], q[1], Math.max(8, q[2] * 0.55), c.sd, c.rp); }
       if (name && !(prev && prev.id === c.id && c.t - prev.t < 2.5)) {
         const q = P((xs + xe) / 2, top, z);
         ctx.fillStyle = '#e8f6ff'; ctx.font = '700 ' + Math.max(10, Math.round(q[2] * 0.2)) + 'px "Space Grotesk", Inter, sans-serif';
@@ -1778,6 +1781,7 @@
     const drawNote = (i) => {
       const nt = p.items[i], str = nt.s | 0;
       if (str < 0 || str >= n) return;
+      if (nt.rp && !p.marks.get(i)) return;   // repeated chord: the frame says it
       const c = colour(str), sus = nt.sus || 0;
       const z = Math.max(0, nt.t - now);
       const holding = sus >= 0.08 && now >= nt.t && now <= nt.t + sus;
@@ -2155,6 +2159,19 @@
     root.querySelector('.g-stage').append(endBox);
   }
   function hideEnd() { if (endBox) endBox.remove(); endBox = null; }
+
+  /** ↓ or ↑ inside a chord frame: which way to strum (lessons write it; songs don't have it). */
+  function strumArrow(ctx, x, y, size, dir, faint) {
+    const h = size, w = size * 0.55, up = dir === 'u';
+    ctx.save();
+    ctx.globalAlpha *= faint ? 0.75 : 1;
+    ctx.strokeStyle = up ? '#7dd3fc' : '#fcd34d'; ctx.fillStyle = ctx.strokeStyle;
+    ctx.lineWidth = Math.max(2, size * 0.12); ctx.lineCap = 'round';
+    const y0 = y - h / 2, y1 = y + h / 2, tip = up ? y0 : y1, back = up ? y1 : y0;
+    ctx.beginPath(); ctx.moveTo(x, back); ctx.lineTo(x, tip + (up ? w * 0.6 : -w * 0.6)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, tip); ctx.lineTo(x - w / 2, tip + (up ? w : -w)); ctx.lineTo(x + w / 2, tip + (up ? w : -w)); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
 
   /** End of a lesson exercise: stars, a word about how it went, and what to do next. */
   function showLessonEnd() {

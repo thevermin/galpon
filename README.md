@@ -73,10 +73,11 @@ Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 
 ### Lecciones de guitarra
 
-En el modo Juego, la pestaña **Lecciones** (en español y en inglés): 37 lecciones cortas en 10 unidades, desde las cuerdas al aire hasta cejillas y Travis picking, pasando por notas del diapasón, acordes abiertos, rasgueos, intervalos, escala mayor, pentatónica y blues, improvisación, armonía (grados, progresiones, relativos, capo), power chords, palm mute, ligados, slides y bends.
+En el modo Juego, la pestaña **Lecciones** (en español y en inglés): 41 lecciones cortas en 10 unidades, desde las cuerdas al aire hasta cejillas y Travis picking, pasando por notas del diapasón, acordes abiertos, rasgueos, intervalos, escala mayor, pentatónica y blues, improvisación, armonía (grados, progresiones, relativos, capo), power chords, palm mute, ligados, slides y bends.
 
 - Teoría corta que **se escucha**: diagramas de acordes, del mástil y tablaturas que suenan con un clic, y preguntas al final de cada tema.
-- **57 ejercicios** en la autopista, con click, batería y una guitarra guía. Galpon te escucha y da hasta 3 estrellas; si cuesta, te ofrece bajar la velocidad.
+- **Pruébalo**: bloques dentro de las lecciones donde tocás unas notas y Galpon te marca cada una al escucharla (o las tocás en el dibujo).
+- **63 ejercicios** en la autopista, con flechas de rasgueo ↓ ↑ y acordes repetidos simplificados (como Rocksmith),, con click, batería y una guitarra guía. Galpon te escucha y da hasta 3 estrellas; si cuesta, te ofrece bajar la velocidad.
 - **Práctica** con niveles y modo eterno (lo que más te cuesta aparece más seguido):
   - **Encuentra la nota**: te pide una nota en una cuerda, la tocas y te dice si caíste o cuántos trastes te faltan.
   - **¿Qué nota es?**: un punto en el mástil y eliges su nombre.
@@ -84,7 +85,9 @@ En el modo Juego, la pestaña **Lecciones** (en español y en inglés): 37 lecci
   - **Bends afinados**: una aguja en vivo te muestra si te falta o te pasas.
   - **Improvisación libre** sobre 5 bases en loop, con la escala en el mástil y tus notas iluminadas mientras tocas. **La banda te sigue**: si tocás más y más fuerte sube (suave, normal, fuerte), si tocás poco baja; y en modo experimental también sigue tu tempo.
   - **Modo bajo** (4 cuerdas) para encontrar y nombrar notas y para improvisar.
-  - **Cambios de acordes** a tiempo, cada vez más rápido.
+  - **Cambios de acordes** a tiempo, cada vez más rápido, y **el minuto de cambios** (cuántos cambios hacés en 60 segundos, con historial).
+  - **Todas sus posiciones**: una nota en todas las cuerdas, para memorizar el mástil.
+  - **Explorador del mástil**: cualquier escala o acorde en cualquier tonalidad, con nombres o grados, y lo que tocás iluminado.
 - El progreso queda guardado y la portada te dice por dónde seguir.
 
 ## Atajos

@@ -2886,6 +2886,22 @@ static void testJamBand()
     t.api.call ("gameClose", {});
 }
 
+static void testLessonSound()
+{
+    std::cout << "Sonidos de las lecciones por la salida de Galpon\n";
+    TestEngine t;
+    auto r = t.api.call ("lessonSound", juce::JSON::parse (R"({"guide":[{"t":0,"p":[52],"d":0.5},{"t":0.3,"p":[40,47,52],"d":0.5}]})"));
+    CHECK ((bool) r["ok"], "arma el sonido (" << r["error"].toString() << ")");
+    CHECK (t.engine.isPreviewPlaying(), "y suena");
+    juce::AudioBuffer<float> out (2, 512);
+    float peak = 0;
+    for (int i = 0; i < 20; ++i) { out.clear(); t.engine.renderOffline (out, 512); peak = std::max (peak, out.getMagnitude (0, 512)); }
+    CHECK (peak > 0.01f, "sale por el máster aunque no haya nada reproduciéndose (" << peak << ")");
+    t.api.call ("lessonSound", juce::JSON::parse (R"({"stop":true})"));
+    out.clear(); t.engine.renderOffline (out, 512);
+    CHECK (! t.engine.isPreviewPlaying() && out.getMagnitude (0, 512) < 1.0e-6f, "y se puede cortar");
+}
+
 static void testGameStress()
 {
     std::cout << "Estrés del juego: abrir canciones y tocar con el audio andando\n";
@@ -3016,6 +3032,7 @@ int main()
     testGameStress();
     testLessonExercise();
     testJamBand();
+    testLessonSound();
     std::cout << "\n" << (checks - failures) << " de " << checks << " pruebas OK\n";
     return failures == 0 ? 0 : 1;
 }

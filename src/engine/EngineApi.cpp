@@ -1391,6 +1391,45 @@ juce::var EngineApi::callUnchecked (const juce::String& cmd, const juce::var& ar
         changed();
         return r.wasOk() ? ok() : fail (r.getErrorMessage());
     }
+    if (cmd == "lessonSound")
+    {
+        // a lesson's example (plucked notes, chords): {guide:[{t, p:[midi], d, m}]} — or {stop:true}
+        if ((bool) arg (args, "stop", false)) { engine.playPreview (nullptr); return ok(); }
+        double end = 0;
+        auto* list = arg (args, "guide", {}).getArray();
+        if (list == nullptr || list->isEmpty()) return fail ("Nada para tocar");
+        for (auto& g : *list) end = juce::jmax (end, (double) g["t"] + (double) g["d"] + 0.6);
+        end = juce::jmin (end, 30.0);
+        const int n = (int) (end * lessonAudio::rate);
+        juce::AudioBuffer<float> b (2, n);
+        b.clear();
+        juce::Random rnd;
+        for (auto& g : *list)
+            if (auto* ps = g["p"].getArray())
+            {
+                const float gain = 0.6f / std::sqrt ((float) juce::jmax (1, ps->size()));
+                int k = 0;
+                for (auto& p : *ps)
+                    lessonAudio::pluck (b, (double) g["t"] + 0.014 * k++, (int) p, (double) g["d"], gain, (bool) g["m"], rnd);
+            }
+        // to the device's rate
+        auto out = std::make_shared<juce::AudioBuffer<float>>();
+        const double sr = engine.getSampleRate() > 0 ? engine.getSampleRate() : lessonAudio::rate;
+        if (std::abs (sr - lessonAudio::rate) < 1.0) *out = std::move (b);
+        else
+        {
+            const double ratio = lessonAudio::rate / sr;
+            const int m = (int) (n / ratio);
+            out->setSize (2, m);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                juce::LagrangeInterpolator li;
+                li.process (ratio, b.getReadPointer (ch), out->getWritePointer (ch), m);
+            }
+        }
+        engine.playPreview (out);
+        return ok();
+    }
     if (cmd == "arrangeSection")
     {
         // {beat, length, op: "delete" | "duplicate" | "move", to}

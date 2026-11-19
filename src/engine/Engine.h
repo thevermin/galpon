@@ -145,6 +145,11 @@ public:
     /** Flex: back to the original recording. */
     juce::Result flexReset (int trackId, int clipId);
 
+    /** Sounds that aren't part of the song (a lesson's examples): played once, on the master, right
+        away, through the same output as everything else. nullptr stops. */
+    void playPreview (std::shared_ptr<const juce::AudioBuffer<float>> sound);
+    bool isPreviewPlaying() const { return previewBusy.load(); }
+
     /** Game mode: the song being played (stems from a .feedpak). */
     GamePlayer game;
     /** Game mode: listens to the guitar's input channel and judges the notes. */
@@ -274,6 +279,9 @@ private:
     juce::File appData;
     juce::AudioFormatManager audioFormats;
     std::atomic<bool> offlineBusy { false };
+    std::shared_ptr<const juce::AudioBuffer<float>> preview;   // under the lock
+    juce::int64 previewPos = 0;
+    std::atomic<bool> previewBusy { false };
     int freezeCaptureId = 0;                          // while freezing: the track being captured
     juce::AudioBuffer<float>* freezeCapture = nullptr;
     double sampleRate = 48000.0;
