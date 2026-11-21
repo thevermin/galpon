@@ -14,6 +14,7 @@
 #include "engine/Recorder.h"
 #include "engine/Yaml.h"
 #include "engine/Feedpak.h"
+#include "engine/RsXmlImport.h"
 #include "engine/GamePlayer.h"
 #include "engine/NoteScorer.h"
 #include "engine/ToneLibrary.h"
@@ -2984,6 +2985,125 @@ static void testGameStress()
     CHECK (blocks > 100 && badBlocks == 0, "el audio siguió sano (" << blocks.load() << " bloques, " << badBlocks.load() << " malos)");
 }
 
+static void testRsXmlImport()
+{
+    std::cout << "Importar canciones desempaquetadas (XML)\n";
+    // GALPON_RS_TRY=<carpeta>: convert real unpacked songs too and print what came out (not part of the checks)
+    if (auto tryDir = juce::SystemStats::getEnvironmentVariable ("GALPON_RS_TRY", {}); tryDir.isNotEmpty())
+        for (auto& s : RsXmlImport::findSongs (juce::File (tryDir)))
+        {
+            auto r = RsXmlImport::convert (s, tempRoot().getChildFile ("rs-try"));
+            std::cout << "    " << s.getFileName() << " -> " << r.created.getFullPathName() << " " << r.error << " [" << r.arrangements.joinIntoString (", ") << "] " << r.warnings.joinIntoString ("; ") << "\n";
+            Feedpak p;
+            if (r.created.existsAsFile() && p.open (r.created).wasOk())
+            {
+                juce::String e;
+                auto g = p.loadForGame (e);
+                for (auto& kv : g["arrangements"].getDynamicObject()->getProperties())
+                    std::cout << "      " << kv.name.toString() << ": " << kv.value["notes"].size() << " notas, " << kv.value["chords"].size() << " acordes " << e << "\n";
+            }
+        }
+    const auto data = juce::File (GALPON_TEST_DATA_DIR);
+    auto root = tempRoot().getChildFile ("cdlc");
+    root.deleteRecursively();
+    auto song = root.getChildFile ("Prueba_p_Pc");
+    auto arr = song.getChildFile ("songs/arr");
+    arr.createDirectory();
+    // two difficulty levels: phrase 0 tops at level 0, phrase 1 at level 1 → merge takes the right notes from each
+    arr.getChildFile ("prueba_lead.xml").replaceWithText (juce::String::fromUTF8 (R"(<?xml version="1.0" encoding="utf-8"?>
+<song version="7">
+  <title>Canción "de" Prueba</title><arrangement>Lead</arrangement><artistName>Los Test</artistName>
+  <albumName>Disco</albumName><albumYear>2001</albumYear><songLength>8.0</songLength><capo>0</capo>
+  <tuning string0="-2" string1="0" string2="0" string3="0" string4="0" string5="0" />
+  <arrangementProperties pathLead="1" pathRhythm="0" pathBass="0" />
+  <tonebase>Limpio</tonebase>
+  <tones count="1"><tone time="4.0" name="Distor" /></tones>
+  <ebeats count="3"><ebeat time="0.0" measure="1" /><ebeat time="0.5" measure="-1" /><ebeat time="1.0" /></ebeats>
+  <phrases count="2"><phrase maxDifficulty="0" name="intro" /><phrase maxDifficulty="1" name="riff" /></phrases>
+  <phraseIterations count="2"><phraseIteration time="0.0" phraseId="0" /><phraseIteration time="4.0" phraseId="1" /></phraseIterations>
+  <sections count="1"><section name="riff" number="1" startTime="4.0" /></sections>
+  <chordTemplates count="1"><chordTemplate chordName="E5" displayName="E5" fret0="0" fret1="2" fret2="-1" fret3="-1" fret4="-1" fret5="-1" finger0="-1" finger1="1" finger2="-1" finger3="-1" finger4="-1" finger5="-1" /></chordTemplates>
+  <levels count="2">
+    <level difficulty="0">
+      <notes count="2"><note time="1.0" string="0" fret="3" sustain="0.5" /><note time="5.0" string="0" fret="1" /></notes>
+      <chords count="0" />
+      <anchors count="1"><anchor time="0.0" fret="1" width="4" /></anchors>
+      <handShapes count="0" />
+    </level>
+    <level difficulty="1">
+      <notes count="3">
+        <note time="1.0" string="5" fret="12" />
+        <note time="5.0" string="1" fret="5" hammerOn="1" slideTo="7" />
+        <note time="5.5" string="2" fret="7" bend="1"><bendValues count="1"><bendValue time="5.6" step="1.5" /></bendValues></note>
+      </notes>
+      <chords count="1"><chord time="6.0" chordId="0" palmMute="1" /></chords>
+      <anchors count="1"><anchor time="4.0" fret="5" width="4" /></anchors>
+      <handShapes count="1"><handShape chordId="0" startTime="6.0" endTime="6.5" /></handShapes>
+    </level>
+  </levels>
+</song>)"));
+    arr.getChildFile ("prueba_vocals.xml").replaceWithText (R"(<?xml version="1.0"?><vocals count="2"><vocal time="1.0" note="60" length="0.4" lyric="Ho-" /><vocal time="1.5" note="62" length="0.4" lyric="la" /></vocals>)");
+    auto audioDir = song.getChildFile ("audio/windows");
+    audioDir.createDirectory();
+    // with only .wem the error has to say how to fix it
+    audioDir.getChildFile ("123.wem").replaceWithText ("x");
+    auto wem = RsXmlImport::convert (song, tempRoot().getChildFile ("cdlc-out"));
+    CHECK (wem.error.contains ("Decode audio") && ! wem.created.exists(), "audio WEM: error que dice cómo arreglarlo");
+    data.getChildFile ("extended.feedpak/stems/full.ogg").copyFileTo (audioDir.getChildFile ("123.ogg"));
+    data.getChildFile ("extended.feedpak/stems/click.ogg").copyFileTo (audioDir.getChildFile ("123_preview.ogg"));
+    // a 4×4 DXT1 cover, one solid red block
+    {
+        juce::MemoryOutputStream dds;
+        dds.write ("DDS ", 4);
+        auto u32 = [&] (juce::uint32 v) { dds.writeInt ((int) v); };
+        u32 (124); u32 (0x1007); u32 (4); u32 (4); u32 (8); u32 (0); u32 (1);
+        for (int i = 0; i < 11; ++i) u32 (0);
+        u32 (32); u32 (0x4); dds.write ("DXT1", 4);
+        for (int i = 0; i < 5; ++i) u32 (0);
+        for (int i = 0; i < 5; ++i) u32 (0);
+        dds.writeShort ((short) 0xF800); dds.writeShort (0); u32 (0);
+        song.getChildFile ("gfxassets/album_art").createDirectory();
+        song.getChildFile ("gfxassets/album_art/album_prueba_256.dds").replaceWithData (dds.getData(), dds.getDataSize());
+        juce::MemoryBlock mb (dds.getData(), dds.getDataSize());
+        auto img = RsXmlImport::decodeDds (mb);
+        CHECK (img.getWidth() == 4 && img.getPixelAt (2, 2).getRed() == 255 && img.getPixelAt (2, 2).getGreen() == 0, "tapa DDS (DXT1)");
+    }
+
+    auto found = RsXmlImport::findSongs (root);
+    CHECK (found.size() == 1 && found[0] == song, "encuentra la canción desempaquetada");
+    auto out = tempRoot().getChildFile ("cdlc-out");
+    out.deleteRecursively();
+    auto r = RsXmlImport::convert (song, out);
+    CHECK (r.error.isEmpty() && r.created.existsAsFile(), "crea el .feedpak: " << r.error);
+    CHECK (r.created.getFileName() == juce::String (u8"Los Test - Canción de Prueba.feedpak"), "nombre Artista - Título: " << r.created.getFileName());
+    Feedpak p;
+    auto opened = p.open (r.created);
+    CHECK (opened.wasOk(), "Galpon lo abre: " << opened.getErrorMessage());
+    CHECK (p.manifest()["title"].toString() == juce::String (u8"Canción \"de\" Prueba") && (int) p.manifest()["year"] == 2001, "título con comillas y año");
+    juce::String err;
+    auto game = p.loadForGame (err);
+    auto lead = game["arrangements"]["lead"];
+    CHECK (err.isEmpty() && lead.isObject(), "carga la parte: " << err);
+    auto notes = lead["notes"];
+    CHECK (notes.size() == 3, "junta la dificultad máxima de cada frase: " << notes.size());
+    CHECK ((int) notes[0]["f"] == 3 && (int) notes[1]["f"] == 5 && (bool) notes[1]["ho"] && (int) notes[1]["sl"] == 7, "notas de cada nivel, con ligado y slide");
+    CHECK (std::abs ((double) notes[2]["bn"] - 1.5) < 1e-6, "bend desde bendValues");
+    CHECK (lead["chords"].size() == 1 && lead["chords"][0]["notes"].size() == 2 && (bool) lead["chords"][0]["notes"][0]["pm"], "acorde sin chordNotes sale de la plantilla");
+    CHECK ((int) lead["tuning"][0] == -2 && lead["templates"][0]["name"].toString() == "E5", "afinación y acordes");
+    CHECK (lead["anchors"].size() == 2 && lead["handshapes"].size() == 1, "posiciones de la mano");
+    CHECK (game["lyrics"].size() == 2 && game["lyrics"][1]["w"].toString() == "la", "letra");
+    CHECK (p.summary (true)["cover"].toString().startsWith ("data:image/png"), "tapa en el paquete");
+    double sr = 0;
+    auto audio = p.readAudio ("stems/full.ogg", sr, err);
+    CHECK (audio != nullptr && audio->getNumSamples() > 0, "audio de la canción");
+    // again: doesn't overwrite the first one
+    auto r2 = RsXmlImport::convert (song, out);
+    CHECK (r2.created.existsAsFile() && r2.created != r.created, "no pisa un paquete que ya existe");
+    auto empty = tempRoot().getChildFile ("cdlc-vacia");
+    empty.createDirectory();
+    CHECK (RsXmlImport::convert (empty, out).error.isNotEmpty(), "carpeta sin canción: error");
+}
+
 int main()
 {
     juce::ScopedJuceInitialiser_GUI init;
@@ -3026,6 +3146,7 @@ int main()
     testStems();
     testAutomation();
     testFeedpak();
+    testRsXmlImport();
     testYamlCorpus();
     testNoteDetection();
     testStress();

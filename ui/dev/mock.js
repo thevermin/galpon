@@ -139,6 +139,9 @@
       case 'setRetune': case 'applyTonePreset': case 'gameRetune': return ok();
       case 'gameLibrary': return ok({ songs: gameSongs, folders: ['/Users/demo/Music/Galpon/Juego'] });
       case 'gameImport': return ok({ count: 0, error: '' });
+      case 'gameImportRs': if (a.list) return ok(['/x/Song_p_Pc', '/x/Otra_p_Pc']); return ok({ count: 1, results: [
+        { folder: 'Song_p_Pc', title: 'Canción de prueba', artist: 'Banda', arrangements: ['Lead', 'Rhythm', 'Bass'], warnings: [], error: '' },
+        { folder: 'Otra_p_Pc', title: 'Otra', artist: '', arrangements: [], warnings: [], error: 'El audio está en formato WEM: desempaqueta otra vez con la opción «Decode audio» del toolkit para que quede en OGG' }] });
       case 'gameAddFolder': return ok();
       case 'gameOpen': gm.open = true; gm.pos = 0; gm.playing = false; gm.ended = false; return ok(gameData());
       case 'gameOpenLesson': gm.open = true; gm.pos = 0; gm.playing = false; gm.ended = false; gm.length = a.length; gm.events = null;
@@ -276,7 +279,7 @@
         case 'arrangeDrummer': { const from = Math.min(...t.clips.map((x) => x.start)), to = Math.max(...t.clips.map((x) => x.start + x.length)); arrange(t, from, to - from); return changed(); }
         case 'useRealDrums': t.instrument.name = 'Batería acústica real'; return changed();
         case 'addLoop': { const dest = t || addTrack('instrument', 'Piano de cola'); dest.clips.push({ id: nextId++, name: a.loopId, start: a.beat, length: 8, midi: true, loopLength: 8, notes: [[0, 1, 60, 0.8], [2, 1, 64, 0.8], [4, 1, 67, 0.8]] }); return changed(); }
-        case 'choose': return { ok: false };
+        case 'choose': return a && a.mode === 'folder' && window.__mockFolder ? { ok: true, path: '/x' } : { ok: false };
         default: return changed();
       }
     },

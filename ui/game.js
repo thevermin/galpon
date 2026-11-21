@@ -145,8 +145,14 @@
         [['all', 'Todas'], ['guitar', 'Guitarra'], ['bass', 'Bajo']].map(([id, label]) =>
           el('button' + (opts.filter === id ? '.on' : ''), { 'aria-pressed': String(opts.filter === id), onclick: () => { opts.filter = id; renderLibrary(); } }, label))),
       el('div.spacer'),
-      el('button.btn', { onclick: importSongs }, 'Importar canciones…'),
-      el('button.btn', { title: 'Sumar una carpeta donde ya tienes canciones .feedpak', onclick: addFolder }, 'Agregar carpeta…'));
+      el('button.btn', { 'aria-haspopup': 'menu', onclick: (e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        G.menu(r.left, r.bottom + 6, [
+          { label: 'Importar canciones…', hint: '.feedpak', action: importSongs },
+          { label: 'Convertir CDLC…', hint: 'XML + OGG', action: convertCdlc },
+          { label: 'Agregar carpeta…', hint: 'sin copiar', action: addFolder },
+        ]);
+      } }, 'Agregar canciones ▾'));
 
     const grid = el('div.g-grid');
     function renderGrid() {
@@ -175,7 +181,8 @@
       el('p', { text: 'El juego lee canciones .feedpak (el formato abierto de feedBack). Impórtalas o cópialas en esta carpeta:' }),
       el('code', { text: folder }),
       el('div.row', null, el('button.btn.primary', { onclick: importSongs }, 'Importar canciones…'), el('button.btn', { onclick: addFolder }, 'Agregar carpeta…')),
-      el('p.note', { text: 'Galpon no abre archivos .psarc de Rocksmith.' }));
+      el('p.note', null, 'Galpon no abre archivos .psarc de Rocksmith, pero convierte canciones custom ya desempaquetadas: ',
+        el('button.linkish', { onclick: convertCdlc }, 'Convertir CDLC…')));
   }
 
   function detail(s) {
@@ -209,6 +216,54 @@
       showLibrary();
     }
   }
+  /** Custom songs the player already unpacked with the community toolkit → .feedpak in the library. */
+  function convertCdlc() {
+    G.modal('Convertir CDLC', (body, close) => {
+      const out = el('div.g-conv-out');
+      const go = el('button.btn.primary', { onclick: pick }, 'Elegir carpeta…');
+      body.append(
+        el('p', { text: 'Galpon convierte canciones custom que ya están desempaquetadas: los archivos XML de cada parte, el audio en OGG y la tapa.' }),
+        el('ol.g-conv-steps', null,
+          el('li', { text: 'Abre el Rocksmith Custom Song Toolkit (gratis, de la comunidad de CDLC) y ve a la pestaña General Config / Unpack.' }),
+          el('li', { text: 'Marca «Decode audio» (y «Convert SNG to XML» si aparece) y desempaqueta tus .psarc custom en una carpeta.' }),
+          el('li', { text: 'Elige esa carpeta acá. Puede tener muchas canciones: las convierte todas y las suma a tu biblioteca.' })),
+        el('p.note', { text: 'Galpon no descifra .psarc: solo lee los archivos ya desempaquetados.' }),
+        el('div.row.end', null, go), out);
+      async function pick() {
+        const r = await G.call('choose', { mode: 'folder', title: 'Elige la carpeta con las canciones desempaquetadas' });
+        if (!r || !r.ok) return;
+        go.disabled = true;
+        out.replaceChildren(el('p.note', { text: 'Convirtiendo… (una canción larga tarda unos segundos)' }));
+        await new Promise((res) => setTimeout(res, 30));
+        const folders = await G.run('gameImportRs', { path: r.path, list: true });
+        if (!folders) { go.disabled = false; out.replaceChildren(); return; }
+        // one song per call: the window stays alive and shows how far it got
+        const results = [];
+        let count = 0;
+        const status = el('p.note');
+        out.replaceChildren(status);
+        for (let i = 0; i < folders.length; i++) {
+          status.textContent = `Convirtiendo ${i + 1} de ${folders.length}…`;
+          await new Promise((res) => setTimeout(res, 20));
+          const one = await G.call('gameImportRs', { path: folders[i] });
+          if (one && one.ok) { count += one.data.count; results.push(...one.data.results); }
+          else results.push({ folder: folders[i].split(/[\\/]/).pop(), arrangements: [], error: (one && one.error) || 'Algo salió mal' });
+        }
+        go.disabled = false;
+        const res = { count, results };
+        const list = el('ul.g-conv-list');
+        for (const x of res.results) {
+          const name = [x.artist, x.title].filter(Boolean).join(' – ') || x.folder;
+          list.append(el('li' + (x.error ? '.bad' : '.good'), null,
+            el('b', { text: (x.error ? '✗ ' : '✓ ') + name }),
+            el('small', { text: x.error || [x.arrangements.join(', '), ...(x.warnings || [])].filter(Boolean).join(' · ') })));
+        }
+        out.replaceChildren(el('p', null, el('b', { text: res.count === 1 ? 'Lista: 1 canción nueva' : `Listas: ${res.count} canciones nuevas` })), list);
+        if (res.count) showLibrary();
+      }
+    }, { wide: true });
+  }
+
   async function addFolder() {
     const r = await G.call('choose', { mode: 'folder', title: 'Elige la carpeta con tus canciones .feedpak' });
     if (!r || !r.ok) return;

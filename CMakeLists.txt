@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 # Universal binary on Mac is optional; by default we build for the machine you are on.
-project(Galpon VERSION 0.20.0 LANGUAGES C CXX)
+project(Galpon VERSION 0.21.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,6 +48,7 @@ set(GALPON_ENGINE_SOURCES
     src/engine/Recorder.cpp
     src/engine/Yaml.cpp
     src/engine/Feedpak.cpp
+    src/engine/RsXmlImport.cpp
     src/engine/GamePlayer.cpp
     src/engine/NoteScorer.cpp
     src/engine/Tone3000.cpp

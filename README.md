@@ -53,6 +53,7 @@ Versión actual: **0.15**. Galpon está en español y en inglés (Configuración
 Practica guitarra o bajo tocando canciones, al estilo de los juegos de ritmo.
 
 - Lee canciones **`.feedpak`** (y `.sloppak`), el formato abierto de [feedBack](https://github.com/got-feedback/feedback). No abre ni descifra archivos de otros juegos.
+- **Convertir CDLC**: pasa a `.feedpak` canciones custom que ya desempaquetaste con el Rocksmith Custom Song Toolkit (opción «Decode audio»): lee el XML de cada parte (junta la dificultad máxima de cada frase), el OGG, la letra y la tapa `.dds`. Convierte carpetas enteras de una vez. Galpon solo lee esos archivos ya desempaquetados: no abre ni descifra `.psarc`.
 - **Dos vistas**:
   - **Tablatura (2D)**: las notas llegan de derecha a izquierda.
   - **Mástil en 3D**, como en Rocksmith: la cámara detrás del mástil mirando un camino largo, la zona de la mano enmarcada en celeste, la cuerda más grave arriba y el número del traste debajo de cada nota. La cámara sigue la mano con suavidad.

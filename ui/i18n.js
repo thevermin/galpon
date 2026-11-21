@@ -1128,9 +1128,31 @@
 "+ Agregar una pista": "+ Add a track",
 "Do may": "C maj",
 " · Estándar": " · Standard",
+"Convertir CDLC…": "Convert CDLC…",
+"Convertir CDLC": "Convert CDLC",
+"Galpon no abre archivos .psarc de Rocksmith, pero convierte canciones custom ya desempaquetadas: ": "Galpon doesn't open Rocksmith .psarc files, but it converts custom songs that are already unpacked: ",
+"Elegir carpeta…": "Choose folder…",
+"Galpon convierte canciones custom que ya están desempaquetadas: los archivos XML de cada parte, el audio en OGG y la tapa.": "Galpon converts custom songs that are already unpacked: each part's XML file, the audio as OGG and the cover.",
+"Abre el Rocksmith Custom Song Toolkit (gratis, de la comunidad de CDLC) y ve a la pestaña General Config / Unpack.": "Open the Rocksmith Custom Song Toolkit (free, from the CDLC community) and go to the General Config / Unpack tab.",
+"Marca «Decode audio» (y «Convert SNG to XML» si aparece) y desempaqueta tus .psarc custom en una carpeta.": "Tick «Decode audio» (and «Convert SNG to XML» if it's there) and unpack your custom .psarc files into a folder.",
+"Elige esa carpeta acá. Puede tener muchas canciones: las convierte todas y las suma a tu biblioteca.": "Pick that folder here. It can hold many songs: it converts them all and adds them to your library.",
+"Galpon no descifra .psarc: solo lee los archivos ya desempaquetados.": "Galpon doesn't decrypt .psarc files: it only reads files that are already unpacked.",
+"Elige la carpeta con las canciones desempaquetadas": "Pick the folder with the unpacked songs",
+"Convirtiendo… (una canción larga tarda unos segundos)": "Converting… (a long song takes a few seconds)",
+"Sin tapa": "No cover",
+"No encontré canciones desempaquetadas (archivos XML de Rocksmith) en esa carpeta": "I didn't find unpacked songs (Rocksmith XML files) in that folder",
+"El audio está en formato WEM: desempaqueta otra vez con la opción «Decode audio» del toolkit para que quede en OGG": "The audio is in WEM format: unpack again with the toolkit's «Decode audio» option so it ends up as OGG",
+"No encontré el audio de la canción (OGG, WAV, MP3 o FLAC)": "I didn't find the song's audio (OGG, WAV, MP3 or FLAC)",
+"No encontré partes (XML de Rocksmith) en esta carpeta": "I didn't find any parts (Rocksmith XML) in this folder",
+"Agregar canciones ▾": "Add songs ▾",
+"sin copiar": "no copying",
 "Siesta eléctrica": "Siesta eléctrica"
 };
   const PATTERNS = [
+[
+"^Convirtiendo (\\d+) de (\\d+)…$",
+"Converting $1 of $2…"
+],
 [
 "^Vas (\\d+) de (\\d+) lecciones$",
 "You've done $1 of $2 lessons"

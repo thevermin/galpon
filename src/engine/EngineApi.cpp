@@ -3,6 +3,7 @@
 #include "Drummer.h"
 #include "Loops.h"
 #include "Analysis.h"
+#include "RsXmlImport.h"
 
 namespace galpon
 {
@@ -1961,6 +1962,42 @@ juce::var EngineApi::gameCall (const juce::String& cmd, const juce::var& args)
         auto* o = new juce::DynamicObject();
         o->setProperty ("count", n);
         o->setProperty ("error", firstError);
+        return ok (juce::var (o));
+    }
+    if (cmd == "gameImportRs")
+    {
+        // custom songs already unpacked with the community toolkit (XML + decoded audio) → .feedpak
+        juce::File root (arg (args, "path").toString());
+        if (! root.isDirectory()) return fail ("Esa carpeta no existe");
+        auto dest = arg (args, "dest").toString().isNotEmpty() ? juce::File (arg (args, "dest").toString()) : gameFolders()[0];
+        auto songsFound = RsXmlImport::findSongs (root);
+        if (songsFound.isEmpty()) return fail (juce::String (u8"No encontré canciones desempaquetadas (archivos XML de Rocksmith) en esa carpeta"));
+        if ((bool) arg (args, "list", false))
+        {
+            // just the song folders, so the screen can convert them one by one and show progress
+            juce::Array<juce::var> paths;
+            for (auto& f : songsFound) paths.add (f.getFullPathName());
+            return ok (juce::var (paths));
+        }
+        juce::Array<juce::var> results;
+        int made = 0;
+        for (auto& s : songsFound)
+        {
+            auto r = RsXmlImport::convert (s, dest);
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("folder", s.getFileName());
+            o->setProperty ("title", r.title);
+            o->setProperty ("artist", r.artist);
+            o->setProperty ("file", r.created.getFullPathName());
+            o->setProperty ("error", r.error);
+            o->setProperty ("warnings", juce::var (r.warnings));
+            o->setProperty ("arrangements", juce::var (r.arrangements));
+            results.add (juce::var (o));
+            if (r.created.existsAsFile()) ++made;
+        }
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("count", made);
+        o->setProperty ("results", results);
         return ok (juce::var (o));
     }
     if (cmd == "gameOpen")

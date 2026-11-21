@@ -378,7 +378,7 @@ body.in-game #app { visibility: hidden; }
 .g-head { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: #18181b; border-bottom: 1px solid #26262a; flex-wrap: wrap; }
 .g-head h1 { margin: 0 8px 0 4px; font-size: 20px; }
 .g-mode { height: 34px; padding: 0 12px 0 8px; border-radius: 8px; border: 1px solid var(--line2); background: var(--raised2); display: inline-flex; align-items: center; gap: 6px; color: var(--text2); }
-.g-search { width: 240px; max-width: 40vw; height: 34px; }
+input.text.g-search { flex: 0 1 240px; min-width: 120px; width: 240px; max-width: 40vw; height: 34px; }
 .g-libbody { flex: 1; display: flex; min-height: 0; }
 .g-gridwrap { flex: 1; overflow: auto; padding: 20px; }
 .g-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; }
@@ -778,3 +778,13 @@ body.in-game #app { visibility: hidden; }
 .l-omcbars i span { position: absolute; top: -16px; left: 0; right: 0; text-align: center; font-size: 11px; font-style: normal; color: var(--text2); }
 .l-explctl { flex-wrap: wrap; gap: 14px; margin: 8px 0 12px; }
 .l-course > .g-head, .l-lesson > .g-head { zoom: var(--lz, 1); }
+
+/* converting unpacked custom songs */
+.g-conv-steps { margin: 4px 0 8px; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; color: var(--text2); }
+.g-conv-out:empty { display: none; }
+.g-conv-out { margin-top: 10px; max-height: 40vh; overflow: auto; }
+.g-conv-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.g-conv-list li { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border-radius: 6px; background: var(--deep); }
+.g-conv-list li.bad b { color: var(--danger, #e5484d); }
+.g-conv-list small { color: var(--text2); }
+button.linkish { background: none; border: 0; padding: 0; color: var(--accent-soft-ink); text-decoration: underline; cursor: pointer; font: inherit; }
